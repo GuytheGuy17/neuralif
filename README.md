@@ -39,12 +39,17 @@ If our code helps your research or work, please consider citing our paper. The f
   url={https://openreview.net/forum?id=FozLrZ3CI5}
 }
 
-@article{hausner2024learning,
+@InProceedings{hausner2025learning,
   title={Learning incomplete factorization preconditioners for {GMRES}},
   author={H{\"a}usner, Paul and Nieto Juscafresa, Aleix and Sj{\"o}lund, Jens},
-  journal={arXiv preprint arXiv:2409.08262},
-  year={2024}
+  booktitle={Proceedings of the 6th Northern Lights Deep Learning Conference (NLDL)},
+  pages={85--99},
+  year={2025},
+  volume={265},
+  series={Proceedings of Machine Learning Research},
+  publisher={PMLR},
 }
+
 ```
 
 Please feel free to reach out if you have any questions or comments.
