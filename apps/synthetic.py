@@ -5,25 +5,25 @@ import numpy as np
 import scipy
 from scipy.sparse import coo_matrix
 
-# This assumes data.py with matrix_to_graph is in the same directory
 from data import matrix_to_graph
 
-
-def generate_sparse_random(n, alpha=1e-4, random_state=0):
-    """Generates a random sparse SPD matrix using the paper's method."""
+def generate_sparse_random(n, alpha=1e-3, random_state=0):
+    """
+    Generates a random sparse SPD matrix, matching the paper's description.
+    The final matrix is computed as M = A*A^T + alpha*I.
+    """
     rng = np.random.RandomState(random_state)
     
-    # Using 1% sparsity to match the paper's synthetic dataset description
-    sparsity = 0.01
+    # Sparsity of 1% to match the paper's synthetic dataset
+    sparsity = 0.01 
     nnz = int(sparsity * n ** 2)
     
-    # Ensure unique coordinates
     rows_cols = set()
     while len(rows_cols) < nnz:
         rows_cols.add((rng.randint(0, n), rng.randint(0, n)))
     
     rows, cols = zip(*rows_cols)
-    vals = np.array([rng.normal(0, 1) for _ in cols])
+    vals = rng.normal(0, 1, size=len(cols))
     
     M = coo_matrix((vals, (rows, cols)), shape=(n, n))
     I = scipy.sparse.identity(n)
@@ -62,13 +62,9 @@ def main(args):
         if (i + 1) % 100 == 0 or (i + 1) == args.num_samples:
             print(f"  ... generated and saved sample {i + 1} / {args.num_samples}")
 
-    print("-" * 50)
-    print("Generation complete.")
-    print("-" * 50)
-
+    print("-" * 50, "\nGeneration complete.\n", "-" * 50)
 
 if __name__ == '__main__':
-    # --- UPDATED: Using argparse to control generation ---
     parser = argparse.ArgumentParser(description="Generate synthetic graph datasets.")
     
     parser.add_argument('--output_dir', type=str, required=True, help="Directory to save the generated graph files.")

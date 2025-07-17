@@ -6,16 +6,12 @@ from torch_geometric.loader import DataLoader
 from torch_geometric.utils import from_scipy_sparse_matrix
 from scipy.sparse import coo_matrix
 
-def matrix_to_graph_sparse(A, b):
-    """Internal helper to convert a SciPy COO matrix to a PyG Data object."""
-    edge_index = torch.tensor(np.array([A.row, A.col]), dtype=torch.long)
-    edge_attr = torch.tensor(A.data, dtype=torch.float).unsqueeze(1)
-    node_features = torch.tensor(b, dtype=torch.float).unsqueeze(1)
-    return Data(x=node_features, edge_index=edge_index, edge_attr=edge_attr)
-
-def matrix_to_graph(A, b):
-    """Converts a SciPy sparse matrix to a PyG Data object."""
-    return matrix_to_graph_sparse(coo_matrix(A), b)
+def matrix_to_graph(scipy_matrix, b_vector):
+    """Efficiently converts a SciPy sparse matrix and a vector 'b' into a PyTorch Geometric Data object."""
+    edge_index, edge_attr = from_scipy_sparse_matrix(scipy_matrix)
+    node_features = torch.tensor(b_vector, dtype=torch.float).view(-1, 1)
+    data = Data(x=node_features, edge_index=edge_index.long(), edge_attr=edge_attr.float())
+    return data
 
 def graph_to_matrix(data):
     """Converts a PyG Data object back to a sparse torch tensor."""
@@ -44,8 +40,6 @@ def get_dataloader(dataset_path, batch_size=1, mode="train", **kwargs):
     """
     folder_path = os.path.join(dataset_path, mode)
     dataset = FolderDataset(folder_path=folder_path)
-    
-    # This function now ignores unused parameters like 'n' and 'spd' for simplicity.
     
     print(f"Successfully created a '{mode}' dataloader.")
     print(f" -> Loading {len(dataset)} samples from: {os.path.abspath(folder_path)}")
