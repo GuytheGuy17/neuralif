@@ -12,7 +12,7 @@ from apps.data import get_dataloader, graph_to_matrix
 from neuralif.utils import count_parameters
 from neuralif.logger import TrainResults
 from neuralif.loss import loss
-from neuralif.models import NeuralIF
+from neuralif.models import NeuralIF # We only need the one model
 
 def main(config):
     device = torch.device(f"cuda:{config['device']}" if torch.cuda.is_available() and config.get("device") is not None else "cpu")
@@ -26,7 +26,11 @@ def main(config):
     
     torch_geometric.seed_everything(config["seed"])
     
-    model_args = {k: config[k] for k in ["latent_size", "message_passing_steps", "skip_connections", "augment_nodes", "global_features", "decode_nodes", "normalize_diag", "activation", "aggregate", "graph_norm", "two_hop", "edge_features"] if k in config}
+    model_arg_keys = [
+        "latent_size", "message_passing_steps", "skip_connections", "augment_nodes",
+        "activation", "aggregate", "two_hop", "edge_features"
+    ]
+    model_args = {k: v for k, v in config.items() if k in model_arg_keys and v is not None}
     
     model = NeuralIF(**model_args)
     model.to(device)
@@ -34,7 +38,7 @@ def main(config):
     
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["learning_rate"])
     
-    train_loader = get_dataloader(config["dataset"], batch_size=config["batch_size"], mode="train")
+    train_loader = get_dataloader(dataset_path=config["dataset"], batch_size=config["batch_size"], mode="train")
     
     print("--- Starting Training ---")
     for epoch in range(config["num_epochs"]):
@@ -44,20 +48,28 @@ def main(config):
         for data in train_loader:
             data = data.to(device)
             optimizer.zero_grad()
-            output, reg, _ = model(data)
             
-            loss_kwargs = {
-                "pcg_steps": config["pcg_steps"],
-                "pcg_weight": config["pcg_weight"],
-            }
-            l = loss(output, data, config=config["loss"], **loss_kwargs)
+            # The model returns the L factor and a regularization term
+            L_factor, reg, _ = model(data)
+            
+            # Loss kwargs are passed to the selected loss function
+            loss_kwargs = {"pcg_steps": config["pcg_steps"], "pcg_weight": config["pcg_weight"]}
+            
+            # Calculate the main loss (either 'sketched' or 'sketch_pcg')
+            main_loss = loss(L_factor, data, config=config["loss"], **loss_kwargs)
+            
+            # Add the L1 regularization term from the model
+            total_loss = main_loss
             if reg is not None and config["regularizer"] > 0:
-                l += config["regularizer"] * reg
-            l.backward()
+                total_loss += config["regularizer"] * reg
+            
+            total_loss.backward()
+            
             if config["gradient_clipping"]:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), config["gradient_clipping"])
+            
             optimizer.step()
-            running_loss += l.item()
+            running_loss += total_loss.item()
             
         avg_epoch_loss = running_loss / len(train_loader)
         print(f"Epoch {epoch+1}/{config['num_epochs']} \t Training Loss: {avg_epoch_loss:.4f} \t Time: {time.perf_counter() - start_epoch:.2f}s")
@@ -83,21 +95,20 @@ def argparser():
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
     parser.add_argument("--gradient_clipping", type=float, default=1.0)
-    parser.add_argument("--regularizer", type=float, default=0)
+    parser.add_argument("--regularizer", type=float, default=0.1, help="Weight for L1 penalty from model.")
     # Loss
     parser.add_argument("--loss", type=str, default="sketched", choices=['sketched', 'sketch_pcg'])
-    parser.add_argument("--pcg_steps", type=int, default=3)
-    parser.add_argument("--pcg_weight", type=float, default=0.1)
+    parser.add_argument("--pcg_steps", type=int, default=5, help="Num of steps for PCG proxy loss.")
+    parser.add_argument("--pcg_weight", type=float, default=0.1, help="Weight for PCG proxy loss.")
     # Model
-    parser.add_argument("--model", type=str, default="neuralif")
     parser.add_argument("--latent_size", type=int, default=8)
     parser.add_argument("--message_passing_steps", type=int, default=3)
     parser.add_argument("--activation", type=str, default="relu")
-    parser.add_argument("--augment_nodes", action='store_true', default=False)
+    parser.add_argument("--aggregate", type=str, default="mean")
+    parser.add_argument("--edge_features", type=int, default=16)
+    parser.add_argument("--augment_nodes", action='store_true', default=True)
     parser.add_argument("--skip_connections", action='store_true', default=True)
-    # Dummy args for model_args dict
-    for arg in ["global_features", "edge_features", "decode_nodes", "normalize_diag", "aggregate", "graph_norm", "two_hop"]:
-        parser.add_argument(f'--{arg}', default=None)
+    parser.add_argument("--two_hop", action='store_true', default=False)
 
     return parser.parse_args()
 
