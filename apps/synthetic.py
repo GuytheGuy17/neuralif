@@ -1,95 +1,81 @@
 import os
-
-import numpy as np
+import argparse
 import torch
+import numpy as np
 import scipy
 from scipy.sparse import coo_matrix
 
+# This assumes data.py with matrix_to_graph is in the same directory
 from data import matrix_to_graph
 
 
-def generate_sparse_random(n, alpha=1e-4, random_state=0, sol=False, ood=False):
-    # We add to spd matricies since the sparsity is only enforced on the cholesky decomposition
-    # generare a lower trinagular matrix
-    # Random state
+def generate_sparse_random(n, alpha=1e-4, random_state=0):
+    """Generates a random sparse SPD matrix using the paper's method."""
     rng = np.random.RandomState(random_state)
     
-    if alpha is None:
-        alpha = rng.uniform(1e-4, 1e-2)
-    
-    # this is 1% sparsity for n = 10 000
-    sparsity = 10e-4
-    
-    # create out of distribution samples
-    if ood:
-        factor = rng.uniform(0.22, 2.2)
-        sparsity = factor * sparsity
-    
+    # Using 1% sparsity to match the paper's synthetic dataset description
+    sparsity = 0.01
     nnz = int(sparsity * n ** 2)
-    rows = [rng.randint(0, n) for _ in range(nnz)]
-    cols = [rng.randint(0, n) for _ in range(nnz)]
     
-    uniques = set(zip(rows, cols))
-    rows, cols = zip(*uniques)
+    # Ensure unique coordinates
+    rows_cols = set()
+    while len(rows_cols) < nnz:
+        rows_cols.add((rng.randint(0, n), rng.randint(0, n)))
     
-    # generate values
+    rows, cols = zip(*rows_cols)
     vals = np.array([rng.normal(0, 1) for _ in cols])
     
     M = coo_matrix((vals, (rows, cols)), shape=(n, n))
     I = scipy.sparse.identity(n)
-    
-    # create spd matrix
     A = (M @ M.T) + alpha * I
-    print(f"Generated matrix with {100 * (A.nnz / n**2) :.2f}% non-zero elements: ({A.nnz} non-zeros)")
     
-    # right hand side is uniform
     b = rng.uniform(0, 1, size=n)
     
-    # We want a high-accuracy solution, so we use a direct sparse solver here.
-    # only produce when in test mode
-    if sol:
-        # generate solution using dense method for accuracy reasons
-        x, _ = scipy.sparse.linalg.cg(A, b)
-        
-    else:
-        x = None
+    # Generate a high-accuracy solution using CG for test/val sets
+    x, _ = scipy.sparse.linalg.cg(A, b)
     
-    return A, x, b
+    return A, b, x
 
+def main(args):
+    """Main function to generate and save the dataset based on command-line arguments."""
+    print(f"Preparing to generate {args.num_samples} samples...")
+    print(f" -> Matrix size: {args.matrix_size}x{args.matrix_size}")
+    print(f" -> Output dir: {os.path.abspath(args.output_dir)}")
+    os.makedirs(args.output_dir, exist_ok=True)
 
-def create_dataset(n, samples, alpha=1e-2, graph=True, rs=0, mode='train', solution=False):
-    if mode != 'train':
-        assert rs != 0, 'rs must be set for test and val to avoid overlap'
-    
-    print(f"Generating {samples} samples for the {mode} dataset.")
-    
-    for sam in range(samples):
-        # generate solution only for val and test
+    for i in range(args.num_samples):
+        random_state = args.seed + i
         
-        A, x, b = generate_sparse_random(n, random_state=(rs + sam), alpha=alpha, sol=solution,
-                                         ood=(mode=="test_ood"))
+        A, b, x = generate_sparse_random(
+            n=args.matrix_size, 
+            alpha=args.alpha, 
+            random_state=random_state
+        )
         
-        if graph:
-            graph = matrix_to_graph(A, b)
-            if x is not None:
-                graph.s = torch.tensor(x, dtype=torch.float)
-            graph.n = n
-            torch.save(graph, f'./data/Random/{mode}/{n}_{sam}.pt')
-        else:
-            A = coo_matrix(A)
-            np.savez(f'./data/Random/{mode}/{n}_{sam}.npz', A=A, b=b, x=x)
+        graph = matrix_to_graph(A, b)
+        if x is not None:
+            graph.s = torch.tensor(x, dtype=torch.float)
+        
+        save_path = os.path.join(args.output_dir, f'graph_{args.matrix_size}_{i}.pt')
+        torch.save(graph, save_path)
+        
+        if (i + 1) % 100 == 0 or (i + 1) == args.num_samples:
+            print(f"  ... generated and saved sample {i + 1} / {args.num_samples}")
+
+    print("-" * 50)
+    print("Generation complete.")
+    print("-" * 50)
 
 
 if __name__ == '__main__':
-    # create the folders and subfolders where the data is stored
-    os.makedirs(f'./data/Random/train', exist_ok=True)
-    os.makedirs(f'./data/Random/val', exist_ok=True)
-    os.makedirs(f'./data/Random/test', exist_ok=True)
+    # --- UPDATED: Using argparse to control generation ---
+    parser = argparse.ArgumentParser(description="Generate synthetic graph datasets.")
     
-    # create 10k dataset
-    n = 10_000
-    alpha=10e-4
-    
-    create_dataset(n, 1000, alpha=alpha, mode='train', rs=0, graph=True, solution=True)
-    create_dataset(n, 10, alpha=alpha, mode='val', rs=10000, graph=True)
-    create_dataset(n, 100, alpha=alpha, mode='test', rs=103600, graph=True)
+    parser.add_argument('--output_dir', type=str, required=True, help="Directory to save the generated graph files.")
+    parser.add_argument('--num_samples', type=int, default=10, help="Number of graph samples to generate.")
+    parser.add_argument('--matrix_size', type=int, default=1024, help="Matrix size (N) for the NxN matrices.")
+    parser.add_argument('--alpha', type=float, default=1e-3, help="Regularization parameter for SPD generation.")
+    parser.add_argument('--seed', type=int, default=42, help="Base random seed for reproducibility.")
+
+    args = parser.parse_args()
+    main(args)
