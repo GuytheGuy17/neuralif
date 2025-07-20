@@ -1,4 +1,4 @@
-# FILE: neuralif/models.py
+# FILE: neuralif/models.py (FIXED)
 
 import torch
 import torch.nn as nn

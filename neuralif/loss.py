@@ -1,8 +1,7 @@
-# FILE: neuralif/loss.py (FIXED)
 
 import warnings
 import torch
-import torch.sparse  # <--- IMPORT THIS
+import torch.sparse
 from apps.data import graph_to_matrix
 
 warnings.filterwarnings('ignore', '.*Sparse CSR tensor support is in beta state.*')
