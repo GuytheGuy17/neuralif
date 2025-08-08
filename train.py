@@ -41,7 +41,6 @@ def main(config):
     
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["learning_rate"])
     
-    # --- START OF DEFINITIVE FIX ---
     # Pass the new fill-in arguments to the dataloader
     train_loader = get_dataloader(
         dataset_path=config["dataset"], 
@@ -50,7 +49,6 @@ def main(config):
         add_fill_in=config["add_fill_in"],
         fill_in_k=config["fill_in_k"]
     )
-    # --- END OF DEFINITIVE FIX ---
     
     print("--- Starting Training ---")
     for epoch in range(config["num_epochs"]):
@@ -122,14 +120,16 @@ def argparser():
     parser.add_argument("--skip_connections", action='store_true', default=True)
     parser.add_argument("--two_hop", action='store_true', default=False)
 
-    # --- START OF DEFINITIVE FIX ---
     # Add the arguments for the new fill-in model.
     parser.add_argument("--add_fill_in", action='store_true', help="Enable the heuristic fill-in preprocessing.")
     parser.add_argument("--fill_in_k", type=int, default=5, help="Number of candidate fill-in edges to add per row.")
-    # --- END OF DEFINITIVE FIX ---
 
     return parser.parse_args()
 
 if __name__ == "__main__":
-    args = parser.parse_args()
+    # --- START OF DEFINITIVE FIX ---
+    # The 'argparser' function returns the parsed arguments directly.
+    # The previous version had a typo here ('parser.parse_args()').
+    args = argparser()
     main(vars(args))
+    # --- END OF DEFINITIVE FIX ---
