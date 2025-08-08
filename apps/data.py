@@ -4,7 +4,7 @@ from torch_geometric.data import Dataset, DataLoader
 from scipy.sparse import coo_matrix
 
 # Import the new preprocessing transform
-from apps.preprocess import AddHeuristicFillIn
+from preprocess import AddHeuristicFillIn
 
 class FolderDataset(Dataset):
     """
