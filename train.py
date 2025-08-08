@@ -1,3 +1,6 @@
+# FILE: train.py
+# (Definitively corrected to include fill-in arguments and the robust data conversion method)
+
 import os
 import argparse
 import json
@@ -29,13 +32,16 @@ def main(config):
     model_args = {k: v for k, v in config.items() if k in model_arg_keys and v is not None}
     
     model = NeuralIF(**model_args)
+
+    # Convert the model's parameters to float64 for high-precision training
     model.to(torch.float64)
     model.to(device)
+
     print(f"\nNumber of parameters in model: {count_parameters(model)}\n")
     
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["learning_rate"])
     
-    # --- START OF MODIFICATION ---
+    # --- START OF DEFINITIVE FIX ---
     # Pass the new fill-in arguments to the dataloader
     train_loader = get_dataloader(
         dataset_path=config["dataset"], 
@@ -44,7 +50,7 @@ def main(config):
         add_fill_in=config["add_fill_in"],
         fill_in_k=config["fill_in_k"]
     )
-    # --- END OF MODIFICATION ---
+    # --- END OF DEFINITIVE FIX ---
     
     print("--- Starting Training ---")
     for epoch in range(config["num_epochs"]):
@@ -52,8 +58,9 @@ def main(config):
         running_loss, start_epoch = 0.0, time.perf_counter()
         
         for data in train_loader:
-            data = data.to(torch.float64)
-            data = data.to(device)
+            # Combine the device and dtype conversions into a single, unambiguous call.
+            data = data.to(device, dtype=torch.float64)
+            
             optimizer.zero_grad()
             
             L_factor, reg, _ = model(data)
@@ -91,38 +98,38 @@ def main(config):
 
 def argparser():
     parser = argparse.ArgumentParser(description="Training script for NeuralIF.")
-    # ... (most arguments are the same) ...
     parser.add_argument("--name", type=str, default="training_run")
     parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--save", action='store_true', default=True)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--dataset", type=str, required=True)
+    parser.add_argument("--dataset", type=str, required=True, help="Path to the root directory of the dataset.")
     parser.add_argument("--num_epochs", type=int, default=50)
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--learning_rate", type=float, default=1e-3)
     parser.add_argument("--gradient_clipping", type=float, default=1.0)
-    parser.add_argument("--regularizer", type=float, default=0.0)
-    parser.add_argument("--loss", type=str, default="sketched", choices=['sketched', 'sketch_pcg'])
-    parser.add_argument("--normalize_loss", action='store_true')
-    parser.add_argument("--pcg_steps", type=int, default=10)
-    parser.add_argument("--pcg_weight", type=float, default=0.1)
-    parser.add_argument("--latent_size", type=int, default=32)
+    parser.add_argument("--regularizer", type=float, default=0.0, help="Weight for L1 penalty. Set > 0 to enable.")
+    parser.add_argument("--loss", type=str, default="sketched", choices=['sketched', 'sketch_pcg'], help="Loss function to use.")
+    parser.add_argument("--normalize_loss", action='store_true', help="Use normalized Frobenius loss instead of absolute for the 'sketched' baseline.")
+    parser.add_argument("--pcg_steps", type=int, default=10, help="Num of steps for the PCG proxy loss.")
+    parser.add_argument("--pcg_weight", type=float, default=0.1, help="Weight (lambda) for the PCG proxy loss term.")
+    parser.add_argument("--latent_size", type=int, default=8)
     parser.add_argument("--message_passing_steps", type=int, default=3)
     parser.add_argument("--activation", type=str, default="relu")
     parser.add_argument("--aggregate", type=str, default="mean")
-    parser.add_argument("--edge_features", type=int, default=16)
-    parser.add_argument("--preconditioner_solve_steps", type=int, default=5)
+    parser.add_argument("--edge_features", type=int, default=1)
+    parser.add_argument("--preconditioner_solve_steps", type=int, default=5, help="Num of inner CG steps for the triangular solve proxy.")
     parser.add_argument("--augment_nodes", action='store_true', default=True)
     parser.add_argument("--skip_connections", action='store_true', default=True)
     parser.add_argument("--two_hop", action='store_true', default=False)
 
-    # --- START OF NEW ARGUMENTS ---
+    # --- START OF DEFINITIVE FIX ---
+    # Add the arguments for the new fill-in model.
     parser.add_argument("--add_fill_in", action='store_true', help="Enable the heuristic fill-in preprocessing.")
     parser.add_argument("--fill_in_k", type=int, default=5, help="Number of candidate fill-in edges to add per row.")
-    # --- END OF NEW ARGUMENTS ---
+    # --- END OF DEFINITIVE FIX ---
 
     return parser.parse_args()
 
 if __name__ == "__main__":
-    args = argparser()
+    args = parser.parse_args()
     main(vars(args))
