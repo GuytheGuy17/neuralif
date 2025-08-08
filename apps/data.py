@@ -1,5 +1,6 @@
 import os
 import torch
+import numpy as np
 from torch_geometric.data import Data, Dataset, DataLoader
 from scipy.sparse import coo_matrix
 
