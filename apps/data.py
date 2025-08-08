@@ -4,17 +4,9 @@ import numpy as np
 from torch_geometric.data import Data, Dataset, DataLoader
 from scipy.sparse import coo_matrix
 
-# Import the new preprocessing transform, assuming it's in apps/preprocess.py
-try:
-    from preprocess import AddHeuristicFillIn
-except ImportError:
-    # Provide a dummy class if preprocess.py doesn't exist, so old code doesn't break.
-    print("Warning: 'apps/preprocess.py' not found. Fill-in functionality will be disabled.")
-    class AddHeuristicFillIn:
-        def __init__(self, K=0): pass
-        def __call__(self, data): return data
+# Import the preprocessing transform
+from apps.preprocess import AddHeuristicFillIn
 
-# This is the function that was missing, causing the ImportError.
 def matrix_to_graph(A, b):
     """
     Converts a SciPy sparse matrix and a NumPy vector into a PyTorch Geometric
@@ -26,15 +18,11 @@ def matrix_to_graph(A, b):
     x = torch.tensor(b, dtype=torch.float32).unsqueeze(1)
     return Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
 
-
-# This utility is used by the loss function
 def graph_to_matrix(data):
     """
     Converts a PyTorch Geometric Data object back to a PyTorch sparse tensor.
     """
-    # If edge_attr has multiple features (like the is_fill_in flag), only use the first one.
     edge_values = data.edge_attr[:, 0] if data.edge_attr.dim() > 1 else data.edge_attr
-
     A = torch.sparse_coo_tensor(
         data.edge_index,
         edge_values,
@@ -42,7 +30,6 @@ def graph_to_matrix(data):
     )
     b = data.x[:, 0]
     return A, b
-
 
 class FolderDataset(Dataset):
     """
@@ -57,7 +44,12 @@ class FolderDataset(Dataset):
         return len(self.files)
 
     def get(self, idx):
-        data = torch.load(os.path.join(self.folder_path, self.files[idx]))
+        # --- START OF DEFINITIVE FIX ---
+        # The torch.load function now defaults to weights_only=True for security.
+        # We must explicitly set it to False to load complex Python objects like
+        # the torch_geometric.data.Data objects in your dataset.
+        data = torch.load(os.path.join(self.folder_path, self.files[idx]), weights_only=False)
+        # --- END OF DEFINITIVE FIX ---
         return data
 
 def get_dataloader(dataset_path, batch_size, mode="train", add_fill_in=False, fill_in_k=0):
@@ -69,11 +61,8 @@ def get_dataloader(dataset_path, batch_size, mode="train", add_fill_in=False, fi
     if not os.path.isdir(folder_path):
         raise FileNotFoundError(f"CRITICAL: No '{mode}' directory found in the dataset path: {dataset_path}")
 
-    # --- DEFINITIVE MERGED LOGIC ---
-    # Apply the AddHeuristicFillIn transform if the user requests it.
     transform = AddHeuristicFillIn(K=fill_in_k) if add_fill_in else None
     dataset = FolderDataset(folder_path=folder_path, transform=transform)
-    # --- END OF DEFINITIVE MERGED LOGIC ---
 
     if len(dataset) == 0:
         raise FileNotFoundError(f"CRITICAL: No '.pt' files were found in the directory: {folder_path}")
@@ -83,8 +72,8 @@ def get_dataloader(dataset_path, batch_size, mode="train", add_fill_in=False, fi
     if transform:
         print(f" -> Applying transform: {transform}")
 
-    # Use num_workers > 0 for performance, but it can cause issues in some environments.
-    # Set to 0 if you encounter multiprocessing errors.
-    num_workers = 2 if torch.cuda.is_available() else 0
-
-    return DataLoader(dataset, batch_size=batch_size, shuffle=(mode == "train"), num_workers=num_workers)
+    # --- START OF DEFINITIVE FIX ---
+    # Setting num_workers=0 is a robust way to avoid multiprocessing issues
+    # in environments like Google Colab.
+    return DataLoader(dataset, batch_size=batch_size, shuffle=(mode == "train"), num_workers=0)
+    # --- END OF DEFINITIVE FIX ---
