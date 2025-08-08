@@ -1,5 +1,6 @@
 # FILE: train.py
-# (Definitively corrected to include fill-in arguments and the robust data conversion method)
+# (Definitively corrected to handle device and dtype conversion robustly
+# for all versions of PyTorch Geometric.)
 
 import os
 import argparse
@@ -33,15 +34,13 @@ def main(config):
     
     model = NeuralIF(**model_args)
 
-    # Convert the model's parameters to float64 for high-precision training
-    model.to(torch.float64)
+    # The model itself is created in float32, we will cast its parameters later if needed
     model.to(device)
 
     print(f"\nNumber of parameters in model: {count_parameters(model)}\n")
     
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["learning_rate"])
     
-    # Pass the new fill-in arguments to the dataloader
     train_loader = get_dataloader(
         dataset_path=config["dataset"], 
         batch_size=config["batch_size"], 
@@ -56,9 +55,22 @@ def main(config):
         running_loss, start_epoch = 0.0, time.perf_counter()
         
         for data in train_loader:
-            # Combine the device and dtype conversions into a single, unambiguous call.
-            data = data.to(device, dtype=torch.float64)
+            data = data.to(device)
             
+            # --- START OF DEFINITIVE FIX ---
+            # Explicitly convert all relevant tensors in the Data object to float64.
+            # This is the robust way to handle dtype conversion and fixes the TypeError.
+            if data.x is not None:
+                data.x = data.x.to(torch.float64)
+            if data.edge_attr is not None:
+                data.edge_attr = data.edge_attr.to(torch.float64)
+            if hasattr(data, 's') and data.s is not None:
+                 data.s = data.s.to(torch.float64)
+            # --- END OF DEFINITIVE FIX ---
+            
+            # We also need to ensure the model parameters are float64 for this to work
+            model.to(torch.float64)
+
             optimizer.zero_grad()
             
             L_factor, reg, _ = model(data)
@@ -127,9 +139,5 @@ def argparser():
     return parser.parse_args()
 
 if __name__ == "__main__":
-    # --- START OF DEFINITIVE FIX ---
-    # The 'argparser' function returns the parsed arguments directly.
-    # The previous version had a typo here ('parser.parse_args()').
     args = argparser()
     main(vars(args))
-    # --- END OF DEFINITIVE FIX ---
