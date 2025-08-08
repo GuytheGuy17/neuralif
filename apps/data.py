@@ -5,7 +5,7 @@ from torch_geometric.data import Data, Dataset, DataLoader
 from scipy.sparse import coo_matrix
 
 # Import the preprocessing transform
-from apps.preprocess import AddHeuristicFillIn
+from .preprocess import AddHeuristicFillIn
 
 def matrix_to_graph(A, b):
     """
