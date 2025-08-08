@@ -1,8 +1,5 @@
-# FILE: apps/synthetic.py
-# (Restored to the original, correct version that is faithful to the paper's
-# difficulty, using the M@M.T method and targeting a final density.)
-
 import os
+import sys
 import argparse
 import torch
 import numpy as np
@@ -10,8 +7,12 @@ import scipy
 from scipy.sparse import coo_matrix
 from tqdm import tqdm
 
-# Assuming 'data.py' with matrix_to_graph exists in your project structure
-from .data import matrix_to_graph
+# --- START OF DEFINITIVE FIX ---
+# This adds the project's root directory ('neuralif/') to the Python path.
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+# --- END OF DEFINITIVE FIX ---
+
+from apps.data import matrix_to_graph
 
 def generate_sparse_spd_with_target_density(n, target_density, alpha=1e-3, random_state=0, compute_solution=True, tol=0.1, max_iters=20):
     """
@@ -24,7 +25,6 @@ def generate_sparse_spd_with_target_density(n, target_density, alpha=1e-3, rando
     if target_nnz <= 0:
         raise ValueError("Target density is too low, resulting in zero or negative target non-zeros.")
 
-    # Heuristic to estimate a good starting density for M to speed up convergence.
     m_density_est = np.sqrt(target_density / n) if target_density > 0 else 0
 
     A_iter = None
@@ -43,7 +43,6 @@ def generate_sparse_spd_with_target_density(n, target_density, alpha=1e-3, rando
         A_iter = (M_iter @ M_iter.T)
         
         current_nnz = A_iter.nnz
-        # Avoid division by zero if target_nnz is 0
         if target_nnz == 0:
              error_ratio = 1.0 if current_nnz == 0 else float('inf')
         else:
@@ -57,7 +56,6 @@ def generate_sparse_spd_with_target_density(n, target_density, alpha=1e-3, rando
     else:
         tqdm.write(f"\nWarning: Density target not met for seed {random_state}. Using best effort.")
     
-    # Final matrix is constructed with the diagonal shift for SPD guarantee
     A = A_iter + alpha * scipy.sparse.identity(n, format='csc')
     
     A.eliminate_zeros()
@@ -99,7 +97,6 @@ def main(args):
         
         graph = matrix_to_graph(A, b)
         if x is not None:
-            # Ensure the solution tensor is float32, as expected by the rest of the pipeline
             graph.s = torch.tensor(x, dtype=torch.float32)
         
         save_path = os.path.join(args.output_dir, f'graph_{args.matrix_size}_{i}.pt')

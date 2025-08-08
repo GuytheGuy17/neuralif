@@ -1,11 +1,18 @@
 import os
+import sys
 import torch
 import numpy as np
 from torch_geometric.data import Data, Dataset, DataLoader
 from scipy.sparse import coo_matrix
 
-# Import the preprocessing transform
-from .preprocess import AddHeuristicFillIn
+# --- START OF DEFINITIVE FIX ---
+# This adds the project's root directory ('neuralif/') to the Python path.
+# This allows absolute imports (like 'from apps.preprocess...') to work reliably
+# no matter how the script is run.
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+# --- END OF DEFINITIVE FIX ---
+
+from apps.preprocess import AddHeuristicFillIn
 
 def matrix_to_graph(A, b):
     """
@@ -44,12 +51,8 @@ class FolderDataset(Dataset):
         return len(self.files)
 
     def get(self, idx):
-        # --- START OF DEFINITIVE FIX ---
-        # The torch.load function now defaults to weights_only=True for security.
-        # We must explicitly set it to False to load complex Python objects like
-        # the torch_geometric.data.Data objects in your dataset.
+        # Explicitly set weights_only=False to load PyG Data objects
         data = torch.load(os.path.join(self.folder_path, self.files[idx]), weights_only=False)
-        # --- END OF DEFINITIVE FIX ---
         return data
 
 def get_dataloader(dataset_path, batch_size, mode="train", add_fill_in=False, fill_in_k=0):
@@ -72,8 +75,5 @@ def get_dataloader(dataset_path, batch_size, mode="train", add_fill_in=False, fi
     if transform:
         print(f" -> Applying transform: {transform}")
 
-    # --- START OF DEFINITIVE FIX ---
-    # Setting num_workers=0 is a robust way to avoid multiprocessing issues
-    # in environments like Google Colab.
+    # Set num_workers=0 for robust performance in Colab
     return DataLoader(dataset, batch_size=batch_size, shuffle=(mode == "train"), num_workers=0)
-    # --- END OF DEFINITIVE FIX ---
