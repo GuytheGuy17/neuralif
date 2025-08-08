@@ -1,5 +1,6 @@
 import argparse
 import os
+import json  # The missing import
 import torch
 import numpy as np
 
@@ -116,4 +117,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     validate(args.baseline_checkpoint, args.top_k_checkpoint, args.dataset, args.k, args.sample_idx)
+
 
