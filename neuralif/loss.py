@@ -1,7 +1,3 @@
-# FILE: neuralif/loss.py
-# (Final, correct version with the fast, approximate triangular solve
-# for the pcg_proxy, which is compatible with the entire codebase.)
-
 import warnings
 import torch
 from torch_geometric.utils import degree
@@ -14,7 +10,6 @@ warnings.filterwarnings('ignore', '.*Sparse CSR tensor support is in beta state.
 def iterative_triangular_solve(A_sparse, b_vec, iterations=5):
     """
     Approximates the solution to A*x = b using a few steps of a simple iterative solver.
-    This is a fast, differentiable replacement for an exact triangular solve.
     """
     x = torch.zeros_like(b_vec)
     
@@ -31,9 +26,8 @@ def iterative_triangular_solve(A_sparse, b_vec, iterations=5):
     n = A_sparse.shape[0]
     temp_diag = torch.ones(n, device=A_sparse.device, dtype=A_sparse.dtype)
     temp_diag.scatter_(0, diag_indices, diag_values)
-    D_inv = 1.0 / (temp_diag + 1e-12)
+    D_inv = 1.0 / (temp_diag + 1e-9) # Use float32-safe epsilon
 
-    # Perform a few steps of the Jacobi-like Richardson iteration
     for _ in range(iterations):
         x = x + D_inv * (b_vec - A_sparse @ x)
         
@@ -45,13 +39,15 @@ def pcg_proxy(L_mat, U_mat, A, cg_steps: int = 3, preconditioner_solve_steps: in
     A robust and differentiable PCG proxy that uses the fast iterative triangular solve.
     """
     n, device, dtype = A.shape[0], A.device, A.dtype
+    # Epsilon for float32 stability.
+    eps = torch.finfo(dtype).eps * 100
+    
     torch.manual_seed(0)
     b = torch.randn((n, 1), device=device, dtype=dtype)
     x = torch.zeros_like(b)
     r = b.clone()
-    r0_norm = torch.linalg.vector_norm(r) + 1e-16
+    r0_norm = torch.linalg.vector_norm(r) + eps
 
-    # Use the fast, approximate solver for the preconditioner steps
     y = iterative_triangular_solve(L_mat, r.squeeze(), iterations=preconditioner_solve_steps)
     z = iterative_triangular_solve(U_mat, y.squeeze(), iterations=preconditioner_solve_steps)
 
@@ -62,7 +58,7 @@ def pcg_proxy(L_mat, U_mat, A, cg_steps: int = 3, preconditioner_solve_steps: in
     for i in range(cg_steps):
         Ap = A @ p
         pAp = (p * Ap).sum()
-        if torch.abs(pAp) < 1e-12: break
+        if torch.abs(pAp) < eps: break # Use float32-safe check
         alpha = rz_old / pAp
         x = x + alpha * p
         r = r - alpha * Ap
@@ -70,7 +66,7 @@ def pcg_proxy(L_mat, U_mat, A, cg_steps: int = 3, preconditioner_solve_steps: in
         y = iterative_triangular_solve(L_mat, r.squeeze(), iterations=preconditioner_solve_steps)
         z = iterative_triangular_solve(U_mat, y.squeeze(), iterations=preconditioner_solve_steps)
         rz_new = (r * z).sum()
-        if torch.abs(rz_old) < 1e-12: break
+        if torch.abs(rz_old) < eps: break # Use float32-safe check
         beta = rz_new / rz_old
         p = z + beta * p
         rz_old = rz_new
@@ -88,7 +84,8 @@ def sketched_loss(L, A, normalized=False):
     residual_vec = (L_mat @ (U_mat @ z)) - (A @ z)
     norm = torch.linalg.vector_norm(residual_vec, ord=2)
     if normalized:
-        norm = norm / (torch.linalg.vector_norm(A@z, ord=2) + 1e-12)
+        a_norm = torch.linalg.vector_norm(A@z, ord=2)
+        norm = norm / (a_norm + torch.finfo(a_norm.dtype).eps)
     return norm
 
 

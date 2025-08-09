@@ -34,21 +34,27 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
         for sample, data in enumerate(test_loader):
             plot = save_results and sample == (len(test_loader.dataset) - 1)
             
-            # --- START OF float32 FIX ---
-            # 1. Create the COO matrix. PyTorch defaults to float32, which is what we want.
+            # --- START OF HYBRID-PRECISION (float64) FIX ---
+            # For robust and accurate testing, we use float64 (double precision) for the solver,
+            # even though the model was trained in float32. This prevents numerical instability
+            # from corrupting the final performance metrics.
+
+            # 1. Create the COO matrix in float64.
             A_coo = torch.sparse_coo_tensor(data.edge_index, data.edge_attr.squeeze(),
-                                       (data.num_nodes, data.num_nodes)).to('cpu')
+                                       (data.num_nodes, data.num_nodes),
+                                       dtype=torch.float64).to('cpu')
             
             # 2. Convert to CSR format for solver performance.
             A = A_coo.to_sparse_csr()
 
-            # 3. Get the preconditioner.
+            # 3. Get the preconditioner. The LearnedPreconditioner is smart enough to handle
+            # a float32 model with a float64 solver.
             prec = get_preconditioner(data, A_coo, method, model=model, device=device)
             p_time, breakdown, nnzL = prec.time, prec.breakdown, prec.nnz
             
-            # 4. Prepare vectors for the solver, ensuring they are float32.
-            b = data.x[:, 0].squeeze().to('cpu')
-            solution = data.s.squeeze().to('cpu') if hasattr(data, "s") else None
+            # 4. Prepare vectors for the solver, ensuring they are float64.
+            b = data.x[:, 0].squeeze().to(torch.float64).to('cpu')
+            solution = data.s.squeeze().to(torch.float64).to('cpu') if hasattr(data, "s") else None
             
             # 5. Call your specific solver.
             start_solver = time_function()
@@ -63,7 +69,7 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
                 res, final_x = preconditioned_conjugate_gradient(A, b, M=prec, x_true=solution, **solver_settings)
             
             solver_time = time_function() - start_solver
-            # --- END OF float32 FIX ---
+            # --- END OF HYBRID-PRECISION FIX ---
             
             if res:
                 A_norm_sq = np.array([r[0].item() for r in res])
@@ -130,6 +136,8 @@ def argparser():
     parser.add_argument("--subset", type=str, required=False, default="test")
     parser.add_argument("--samples", type=int, required=False, default=None)
     parser.add_argument("--save", action='store_true', default=False)
+    # The --add_fill_in arguments are now implicitly handled by the config loaded from the checkpoint.
+    # We pass the same config to the dataloader for simplicity. This could be improved.
     return parser.parse_args()
 
 
@@ -153,6 +161,7 @@ def main():
         print(f"WARNING: Model '{args.model}' not recognized. Running non-data-driven baselines only.")
 
     warmup(model, test_device)
+    # The dataloader doesn't need fill-in args, as we process the base data and let the preconditioner use the augmented graph.
     testdata_loader = get_dataloader(dataset_path=args.dataset, batch_size=1, mode=args.subset)
     
     test(model, testdata_loader, test_device, folder,
