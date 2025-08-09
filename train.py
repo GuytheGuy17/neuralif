@@ -1,6 +1,5 @@
 # FILE: train.py
-# (Definitively corrected to handle device and dtype conversion robustly
-# for all versions of PyTorch Geometric.)
+# (Updated to run the entire training pipeline in memory-efficient float32)
 
 import os
 import argparse
@@ -32,9 +31,8 @@ def main(config):
     ]
     model_args = {k: v for k, v in config.items() if k in model_arg_keys and v is not None}
     
+    # Model is created in float32 by default
     model = NeuralIF(**model_args)
-
-    # The model itself is created in float32, we will cast its parameters later if needed
     model.to(device)
 
     print(f"\nNumber of parameters in model: {count_parameters(model)}\n")
@@ -55,22 +53,9 @@ def main(config):
         running_loss, start_epoch = 0.0, time.perf_counter()
         
         for data in train_loader:
+            # Data is loaded as float32 and moved to the device
             data = data.to(device)
             
-            # --- START OF DEFINITIVE FIX ---
-            # Explicitly convert all relevant tensors in the Data object to float64.
-            # This is the robust way to handle dtype conversion and fixes the TypeError.
-            if data.x is not None:
-                data.x = data.x.to(torch.float64)
-            if data.edge_attr is not None:
-                data.edge_attr = data.edge_attr.to(torch.float64)
-            if hasattr(data, 's') and data.s is not None:
-                 data.s = data.s.to(torch.float64)
-            # --- END OF DEFINITIVE FIX ---
-            
-            # We also need to ensure the model parameters are float64 for this to work
-            model.to(torch.float64)
-
             optimizer.zero_grad()
             
             L_factor, reg, _ = model(data)
@@ -131,11 +116,8 @@ def argparser():
     parser.add_argument("--augment_nodes", action='store_true', default=True)
     parser.add_argument("--skip_connections", action='store_true', default=True)
     parser.add_argument("--two_hop", action='store_true', default=False)
-
-    # Add the arguments for the new fill-in model.
     parser.add_argument("--add_fill_in", action='store_true', help="Enable the heuristic fill-in preprocessing.")
     parser.add_argument("--fill_in_k", type=int, default=5, help="Number of candidate fill-in edges to add per row.")
-
     return parser.parse_args()
 
 if __name__ == "__main__":
