@@ -34,29 +34,17 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
         for sample, data in enumerate(test_loader):
             plot = save_results and sample == (len(test_loader.dataset) - 1)
             
-            # --- START OF HYBRID-PRECISION (float64) FIX ---
-            # For robust and accurate testing, we use float64 (double precision) for the solver,
-            # even though the model was trained in float32. This prevents numerical instability
-            # from corrupting the final performance metrics.
-
-            # 1. Create the COO matrix in float64.
             A_coo = torch.sparse_coo_tensor(data.edge_index, data.edge_attr.squeeze(),
                                        (data.num_nodes, data.num_nodes),
-                                       dtype=torch.float64).to('cpu')
-            
-            # 2. Convert to CSR format for solver performance.
+                                       dtype=torch.float64)
             A = A_coo.to_sparse_csr()
 
-            # 3. Get the preconditioner. The LearnedPreconditioner is smart enough to handle
-            # a float32 model with a float64 solver.
             prec = get_preconditioner(data, A_coo, method, model=model, device=device)
             p_time, breakdown, nnzL = prec.time, prec.breakdown, prec.nnz
             
-            # 4. Prepare vectors for the solver, ensuring they are float64.
-            b = data.x[:, 0].squeeze().to(torch.float64).to('cpu')
-            solution = data.s.squeeze().to(torch.float64).to('cpu') if hasattr(data, "s") else None
+            b = data.x[:, 0].squeeze().to(torch.float64)
+            solution = data.s.squeeze().to(torch.float64) if hasattr(data, "s") else None
             
-            # 5. Call your specific solver.
             start_solver = time_function()
             solver_settings = {"max_iter": 2 * data.num_nodes, "x0": None, "rtol": test_results.target}
             
@@ -69,12 +57,17 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
                 res, final_x = preconditioned_conjugate_gradient(A, b, M=prec, x_true=solution, **solver_settings)
             
             solver_time = time_function() - start_solver
-            # --- END OF HYBRID-PRECISION FIX ---
+
+            ### START OF DIAGNOSTIC MODIFICATION ###
+            # This is the new line. It prints the results for this specific sample immediately,
+            # so you can see if the solver is taking too many iterations.
+            iterations = len(res) - 1 if res else -1
+            print(f"  [Sample {sample+1}/{len(test_loader.dataset)}] Solved in {solver_time:.2f}s with {iterations} iterations.")
+            ### END OF DIAGNOSTIC MODIFICATION ###
             
             if res:
                 A_norm_sq = np.array([r[0].item() for r in res])
                 rel_res_sq = np.array([r[1].item() for r in res])
-                
                 b_norm_sq = torch.inner(b, b).item()
                 res_norms = np.sqrt(rel_res_sq * b_norm_sq)
                 err_norms = np.sqrt(A_norm_sq)
@@ -101,11 +94,9 @@ def load_checkpoint(model_class, args, device):
     model_arg_keys = ["latent_size", "message_passing_steps", "skip_connections", "augment_nodes", "activation", "aggregate", "two_hop", "edge_features"]
     model_args = {k: v for k, v in config.items() if k in model_arg_keys}
     
-    # The model is created in float32 by default
     model = model_class(**model_args)
     print(f"Loading checkpoint from: {weights_path}")
     
-    # The loaded weights are also float32
     model.load_state_dict(torch.load(weights_path, map_location=device, weights_only=True))
     
     return model
@@ -127,42 +118,64 @@ def warmup(model, device):
 def argparser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", type=str, default=None, help="A name for the test run folder.")
-    parser.add_argument("--device", type=int, required=False, default=0, help="CUDA device index.")
+    parser.add_argument("--device", type=int, required=False, default=0, help="CUDA device index. Use -1 for CPU.")
     parser.add_argument("--model", type=str, required=False, default="none")
     parser.add_argument("--checkpoint", type=str, required=False, help="Path to the checkpoint *folder*.")
     parser.add_argument("--weights", type=str, required=False, default="final_model")
     parser.add_argument("--solver", type=str, default="cg")
     parser.add_argument("--dataset", type=str, required=True, help="Path to the dataset root folder.")
     parser.add_argument("--subset", type=str, required=False, default="test")
-    parser.add_argument("--samples", type=int, required=False, default=None)
     parser.add_argument("--save", action='store_true', default=False)
-    # The --add_fill_in arguments are now implicitly handled by the config loaded from the checkpoint.
-    # We pass the same config to the dataloader for simplicity. This could be improved.
     return parser.parse_args()
 
 
 def main():
     args = argparser()
     
-    if torch.cuda.is_available() and args.device is not None:
+    if torch.cuda.is_available() and args.device >= 0:
         test_device = torch.device(f"cuda:{args.device}")
     else:
         test_device = torch.device("cpu")
+        if args.device >= 0:
+             print("WARNING: CUDA not found or invalid device ID specified. Defaulting to CPU.")
+        else:
+             print("INFO: CPU explicitly selected for testing.")
         
     folder = "results/" + (args.name if args.name else datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
     
     print(f"\nUsing device: {test_device}")
     
     model = None
+    training_config = {}
     if args.model.lower() == "neuralif":
         print("Use model: NeuralIF")
+        config_path = os.path.join(args.checkpoint, "config.json")
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(f"Config file not found at {config_path}")
+        with open(config_path) as f:
+            training_config = json.load(f)
+        
         model = load_checkpoint(NeuralIF, args, test_device)
+        
     elif args.model.lower() != "none":
         print(f"WARNING: Model '{args.model}' not recognized. Running non-data-driven baselines only.")
 
     warmup(model, test_device)
-    # The dataloader doesn't need fill-in args, as we process the base data and let the preconditioner use the augmented graph.
-    testdata_loader = get_dataloader(dataset_path=args.dataset, batch_size=1, mode=args.subset)
+
+    use_fill_in = training_config.get("add_fill_in", False)
+    fill_in_k_val = training_config.get("fill_in_k", 0)
+
+    print("\nConfiguring test dataloader based on training config:")
+    print(f"  -> Add Fill-In: {use_fill_in}")
+    print(f"  -> Fill-In K: {fill_in_k_val}")
+
+    testdata_loader = get_dataloader(
+        dataset_path=args.dataset,
+        batch_size=1,
+        mode=args.subset,
+        add_fill_in=use_fill_in,
+        fill_in_k=fill_in_k_val
+    )
     
     test(model, testdata_loader, test_device, folder,
          save_results=args.save, dataset=os.path.basename(args.dataset), solver=args.solver)
