@@ -34,9 +34,14 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
         for sample, data in enumerate(test_loader):
             plot = save_results and sample == (len(test_loader.dataset) - 1)
             
-            A_coo = torch.sparse_coo_tensor(data.edge_index, data.edge_attr.squeeze(),
+            ### START OF CRASH FIX ###
+            # The .squeeze() call was incorrect for 2D edge_attr.
+            # We must explicitly select the first column [:, 0] which contains the matrix values.
+            A_coo = torch.sparse_coo_tensor(data.edge_index, data.edge_attr[:, 0],
                                        (data.num_nodes, data.num_nodes),
                                        dtype=torch.float64)
+            ### END OF CRASH FIX ###
+
             A = A_coo.to_sparse_csr()
 
             prec = get_preconditioner(data, A_coo, method, model=model, device=device)
@@ -58,12 +63,9 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
             
             solver_time = time_function() - start_solver
 
-            ### START OF DIAGNOSTIC MODIFICATION ###
-            # This is the new line. It prints the results for this specific sample immediately,
-            # so you can see if the solver is taking too many iterations.
+            # This diagnostic print will now work correctly.
             iterations = len(res) - 1 if res else -1
             print(f"  [Sample {sample+1}/{len(test_loader.dataset)}] Solved in {solver_time:.2f}s with {iterations} iterations.")
-            ### END OF DIAGNOSTIC MODIFICATION ###
             
             if res:
                 A_norm_sq = np.array([r[0].item() for r in res])
@@ -121,7 +123,7 @@ def argparser():
     parser.add_argument("--device", type=int, required=False, default=0, help="CUDA device index. Use -1 for CPU.")
     parser.add_argument("--model", type=str, required=False, default="none")
     parser.add_argument("--checkpoint", type=str, required=False, help="Path to the checkpoint *folder*.")
-    parser.add_argument("--weights", type=str, required=False, default="final_model")
+    parser.add_action("--weights", type=str, required=False, default="final_model")
     parser.add_argument("--solver", type=str, default="cg")
     parser.add_argument("--dataset", type=str, required=True, help="Path to the dataset root folder.")
     parser.add_argument("--subset", type=str, required=False, default="test")
