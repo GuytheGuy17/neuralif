@@ -5,19 +5,15 @@ import numpy as np
 from torch_geometric.data import Data, Dataset, DataLoader
 from scipy.sparse import coo_matrix
 
-# --- START OF DEFINITIVE FIX ---
-# This adds the project's root directory ('neuralif/') to the Python path.
-# This allows absolute imports (like 'from apps.preprocess...') to work reliably
-# no matter how the script is run.
+# Add the project's root directory to the Python path for reliable imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-# --- END OF DEFINITIVE FIX ---
 
 from apps.preprocess import AddHeuristicFillIn
 
 def matrix_to_graph(A, b):
     """
     Converts a SciPy sparse matrix and a NumPy vector into a PyTorch Geometric
-    Data object.
+    Data object, using float32 for memory efficiency.
     """
     A_coo = A.tocoo()
     edge_index = torch.tensor(np.vstack((A_coo.row, A_coo.col)), dtype=torch.long)
@@ -57,14 +53,33 @@ class FolderDataset(Dataset):
 
 def get_dataloader(dataset_path, batch_size, mode="train", add_fill_in=False, fill_in_k=0):
     """
-    Creates a DataLoader for the specified dataset split, with optional support
-    for the heuristic fill-in transform.
-    """
-    folder_path = os.path.join(dataset_path, mode)
-    if not os.path.isdir(folder_path):
-        raise FileNotFoundError(f"CRITICAL: No '{mode}' directory found in the dataset path: {dataset_path}")
+    Creates a DataLoader for the specified dataset split.
 
-    transform = AddHeuristicFillIn(K=fill_in_k) if add_fill_in else None
+    If 'add_fill_in' is True, it will prioritize loading from a pre-processed 
+    directory to avoid expensive on-the-fly transformations. If the processed
+    directory does not exist, it falls back to real-time transformation.
+    """
+    # --- START OF PRE-PROCESSING MODIFICATION ---
+    # Prioritize loading pre-processed data if it exists and fill-in is requested
+    processed_folder_path = os.path.join(dataset_path, "processed", mode)
+    
+    # Check if we should use the pre-processed data
+    use_preprocessed = add_fill_in and os.path.isdir(processed_folder_path)
+
+    if use_preprocessed:
+        folder_path = processed_folder_path
+        transform = None # The transform has already been applied
+        print(f"INFO: Loading PRE-PROCESSED data for '{mode}' split.")
+    else:
+        # Fallback to original behavior: on-the-fly transform or no transform
+        folder_path = os.path.join(dataset_path, mode)
+        transform = AddHeuristicFillIn(K=fill_in_k) if add_fill_in else None
+    # --- END OF PRE-PROCESSING MODIFICATION ---
+
+    if not os.path.isdir(folder_path):
+        raise FileNotFoundError(f"CRITICAL: No '{mode}' directory found in the expected path: {folder_path}")
+
+    # Create the dataset from the selected folder with the appropriate transform
     dataset = FolderDataset(folder_path=folder_path, transform=transform)
 
     if len(dataset) == 0:
@@ -73,7 +88,7 @@ def get_dataloader(dataset_path, batch_size, mode="train", add_fill_in=False, fi
     print(f"Successfully created a '{mode}' dataloader.")
     print(f" -> Loading {len(dataset)} samples from: {os.path.abspath(folder_path)}")
     if transform:
-        print(f" -> Applying transform: {transform}")
+        print(f" -> Applying ON-THE-FLY transform: {transform}")
 
-    # Set num_workers=0 for robust performance in Colab
+    # Set num_workers=0 for robust performance in Colab and to avoid issues with some transforms
     return DataLoader(dataset, batch_size=batch_size, shuffle=(mode == "train"), num_workers=0)
