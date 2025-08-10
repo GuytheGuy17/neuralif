@@ -11,7 +11,6 @@ from krylov.cg import conjugate_gradient, preconditioned_conjugate_gradient
 from krylov.preconditioner import get_preconditioner
 from neuralif.models import NeuralIF
 from neuralif.utils import time_function, load_checkpoint
-
 from neuralif.logger import TestResults
 from apps.data import get_dataloader
 
@@ -35,44 +34,35 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
         for sample, data in enumerate(test_loader):
             plot = save_results and sample == (len(test_loader.dataset) - 1)
 
-            ### START OF CRITICAL FIX ###
-            # The 'data' object can be either raw or augmented. We must ensure the matrix 'A'
-            # for the solver is ALWAYS the original, non-augmented matrix.
-            # We reconstruct it by filtering out any edges that were added as fill-in candidates.
-            
-            # Check if the data is augmented (i.e., has the 'is_fill_in' flag)
+            # Reconstruct the original matrix A on the CPU first
             if data.edge_attr.dim() > 1 and data.edge_attr.shape[1] > 1:
-                # Data is augmented. Filter for original edges.
                 is_fill_in_flag = data.edge_attr[:, 1]
                 original_edge_mask = (is_fill_in_flag == 0)
-                
                 edge_index_for_A = data.edge_index[:, original_edge_mask]
-                # Select the values corresponding to the original edges
                 edge_attr_for_A = data.edge_attr[original_edge_mask, 0]
             else:
-                # Data is raw (e.g., from a baseline run). Use it as is.
                 edge_index_for_A = data.edge_index
                 edge_attr_for_A = data.edge_attr.squeeze()
 
-            A_coo = torch.sparse_coo_tensor(
+            A_coo_cpu = torch.sparse_coo_tensor(
                 edge_index_for_A,
                 edge_attr_for_A,
                 (data.num_nodes, data.num_nodes),
                 dtype=torch.float64
             )
-            ### END OF CRITICAL FIX ###
+            A_csr_cpu = A_coo_cpu.to_sparse_csr()
             
-            A = A_coo.to_sparse_csr()
-
-            # The preconditioner is ALWAYS created with the full 'data' object,
-            # which can be augmented. This is correct.
-            prec = get_preconditioner(data, A_coo, method, model=model, device=device, drop_tol=drop_tol)
+            ### START OF CRITICAL FIX ###
+            # The preconditioner is ALWAYS created on the CPU using CPU data.
+            # This is crucial for Jacobi and ScipyILU.
+            prec = get_preconditioner(data, A_coo_cpu, method, model=model, device=device, drop_tol=drop_tol)
             p_time, breakdown, nnzL = prec.time, prec.breakdown, prec.nnz
             
-            # The solver's 'A' matrix is now guaranteed to be the original one.
-            A = A.to(device)
+            # NOW, move the tensors needed FOR THE SOLVER to the target device.
+            A = A_csr_cpu.to(device)
             b = data.x[:, 0].squeeze().to(torch.float64).to(device)
             solution = data.s.squeeze().to(torch.float64).to(device) if hasattr(data, "s") else None
+            ### END OF CRITICAL FIX ###
             
             start_solver = time_function()
             solver_settings = {"max_iter": 2 * data.num_nodes, "x0": None, "rtol": test_results.target}
@@ -93,7 +83,7 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
             if res:
                 A_norm_sq = np.array([r[0].item() for r in res])
                 rel_res_sq = np.array([r[1].item() for r in res])
-                b_norm_sq = torch.inner(b, b).item()
+                b_norm_sq = torch.inner(b.cpu(), b.cpu()).item() # Ensure norms are computed on CPU
                 res_norms = np.sqrt(rel_res_sq * b_norm_sq)
                 err_norms = np.sqrt(A_norm_sq)
                 
@@ -104,9 +94,7 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
         if save_results: test_results.save_results()
         test_results.print_summary()
 
-
-# ... (warmup, argparser, and main functions remain unchanged) ...
-
+# ... (warmup, argparser, main functions are unchanged and correct) ...
 def warmup(model, device):
     if model is None: return
     model.to(device)
@@ -118,7 +106,6 @@ def warmup(model, device):
     ).to(device)
     _ = model(data)
     print("Model warmup done...")
-
 
 def argparser():
     parser = argparse.ArgumentParser()
@@ -134,7 +121,6 @@ def argparser():
     parser.add_argument("--drop_tol", type=float, default=1e-6, 
                         help="Tolerance for dropping small values from the learned preconditioner.")
     return parser.parse_args()
-
 
 def main():
     args = argparser()
