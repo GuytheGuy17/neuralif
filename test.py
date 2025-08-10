@@ -10,7 +10,8 @@ import torch_geometric
 from krylov.cg import conjugate_gradient, preconditioned_conjugate_gradient
 from krylov.preconditioner import get_preconditioner
 from neuralif.models import NeuralIF
-from neuralif.utils import time_function
+from neuralif.utils import time_function, load_checkpoint
+
 from neuralif.logger import TestResults
 from apps.data import get_dataloader
 
@@ -34,14 +35,9 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
         for sample, data in enumerate(test_loader):
             plot = save_results and sample == (len(test_loader.dataset) - 1)
             
-            ### START OF CRASH FIX ###
-            # The .squeeze() call was incorrect for 2D edge_attr.
-            # We must explicitly select the first column [:, 0] which contains the matrix values.
             A_coo = torch.sparse_coo_tensor(data.edge_index, data.edge_attr[:, 0],
                                        (data.num_nodes, data.num_nodes),
                                        dtype=torch.float64)
-            ### END OF CRASH FIX ###
-
             A = A_coo.to_sparse_csr()
 
             prec = get_preconditioner(data, A_coo, method, model=model, device=device)
@@ -63,7 +59,6 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
             
             solver_time = time_function() - start_solver
 
-            # This diagnostic print will now work correctly.
             iterations = len(res) - 1 if res else -1
             print(f"  [Sample {sample+1}/{len(test_loader.dataset)}] Solved in {solver_time:.2f}s with {iterations} iterations.")
             
@@ -80,28 +75,6 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
                 
         if save_results: test_results.save_results()
         test_results.print_summary()
-
-
-def load_checkpoint(model_class, args, device):
-    checkpoint_path = args.checkpoint
-    config_path = os.path.join(checkpoint_path, "config.json")
-    weights_path = os.path.join(checkpoint_path, f"{args.weights}.pt")
-    
-    if not os.path.exists(config_path): raise FileNotFoundError(f"Config file not found at {config_path}")
-    if not os.path.exists(weights_path): raise FileNotFoundError(f"Weights file not found at {weights_path}")
-
-    with open(config_path) as f:
-        config = json.load(f)
-
-    model_arg_keys = ["latent_size", "message_passing_steps", "skip_connections", "augment_nodes", "activation", "aggregate", "two_hop", "edge_features"]
-    model_args = {k: v for k, v in config.items() if k in model_arg_keys}
-    
-    model = model_class(**model_args)
-    print(f"Loading checkpoint from: {weights_path}")
-    
-    model.load_state_dict(torch.load(weights_path, map_location=device, weights_only=True))
-    
-    return model
 
 
 def warmup(model, device):
@@ -123,7 +96,10 @@ def argparser():
     parser.add_argument("--device", type=int, required=False, default=0, help="CUDA device index. Use -1 for CPU.")
     parser.add_argument("--model", type=str, required=False, default="none")
     parser.add_argument("--checkpoint", type=str, required=False, help="Path to the checkpoint *folder*.")
-    parser.add_action("--weights", type=str, required=False, default="final_model")
+    ### START OF CRASH FIX ###
+    # Corrected the method name from add_action to add_argument.
+    parser.add_argument("--weights", type=str, required=False, default="final_model")
+    ### END OF CRASH FIX ###
     parser.add_argument("--solver", type=str, default="cg")
     parser.add_argument("--dataset", type=str, required=True, help="Path to the dataset root folder.")
     parser.add_argument("--subset", type=str, required=False, default="test")
@@ -151,13 +127,12 @@ def main():
     training_config = {}
     if args.model.lower() == "neuralif":
         print("Use model: NeuralIF")
-        config_path = os.path.join(args.checkpoint, "config.json")
-        if not os.path.exists(config_path):
-            raise FileNotFoundError(f"Config file not found at {config_path}")
-        with open(config_path) as f:
-            training_config = json.load(f)
-        
-        model = load_checkpoint(NeuralIF, args, test_device)
+        model, training_config = load_checkpoint(
+            checkpoint_path=args.checkpoint,
+            model_class=NeuralIF,
+            device=test_device,
+            weights_name=f"{args.weights}.pt"
+        )
         
     elif args.model.lower() != "none":
         print(f"WARNING: Model '{args.model}' not recognized. Running non-data-driven baselines only.")
