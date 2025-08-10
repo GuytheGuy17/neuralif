@@ -34,19 +34,42 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
         
         for sample, data in enumerate(test_loader):
             plot = save_results and sample == (len(test_loader.dataset) - 1)
+
+            ### START OF CRITICAL FIX ###
+            # The 'data' object can be either raw or augmented. We must ensure the matrix 'A'
+            # for the solver is ALWAYS the original, non-augmented matrix.
+            # We reconstruct it by filtering out any edges that were added as fill-in candidates.
             
-            A_coo = torch.sparse_coo_tensor(data.edge_index, data.edge_attr[:, 0],
-                                       (data.num_nodes, data.num_nodes),
-                                       dtype=torch.float64)
+            # Check if the data is augmented (i.e., has the 'is_fill_in' flag)
+            if data.edge_attr.dim() > 1 and data.edge_attr.shape[1] > 1:
+                # Data is augmented. Filter for original edges.
+                is_fill_in_flag = data.edge_attr[:, 1]
+                original_edge_mask = (is_fill_in_flag == 0)
+                
+                edge_index_for_A = data.edge_index[:, original_edge_mask]
+                # Select the values corresponding to the original edges
+                edge_attr_for_A = data.edge_attr[original_edge_mask, 0]
+            else:
+                # Data is raw (e.g., from a baseline run). Use it as is.
+                edge_index_for_A = data.edge_index
+                edge_attr_for_A = data.edge_attr.squeeze()
+
+            A_coo = torch.sparse_coo_tensor(
+                edge_index_for_A,
+                edge_attr_for_A,
+                (data.num_nodes, data.num_nodes),
+                dtype=torch.float64
+            )
+            ### END OF CRITICAL FIX ###
+            
             A = A_coo.to_sparse_csr()
 
-            ### START OF MODIFICATION ###
-            # Pass the drop_tol to the get_preconditioner function.
+            # The preconditioner is ALWAYS created with the full 'data' object,
+            # which can be augmented. This is correct.
             prec = get_preconditioner(data, A_coo, method, model=model, device=device, drop_tol=drop_tol)
-            ### END OF MODIFICATION ###
-            
             p_time, breakdown, nnzL = prec.time, prec.breakdown, prec.nnz
             
+            # The solver's 'A' matrix is now guaranteed to be the original one.
             A = A.to(device)
             b = data.x[:, 0].squeeze().to(torch.float64).to(device)
             solution = data.s.squeeze().to(torch.float64).to(device) if hasattr(data, "s") else None
@@ -76,11 +99,13 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
                 
                 test_results.log_solve(A.shape[0], solver_time, len(res) - 1,
                                        res_norms, err_norms, p_time, 0.0)
-                test_results.log(A._nnz(), nnzL, plot=plot)
+                test_results.log(A.cpu()._nnz(), nnzL, plot=plot)
                 
         if save_results: test_results.save_results()
         test_results.print_summary()
 
+
+# ... (warmup, argparser, and main functions remain unchanged) ...
 
 def warmup(model, device):
     if model is None: return
@@ -106,13 +131,8 @@ def argparser():
     parser.add_argument("--dataset", type=str, required=True, help="Path to the dataset root folder.")
     parser.add_argument("--subset", type=str, required=False, default="test")
     parser.add_argument("--save", action='store_true', default=False)
-    
-    ### START OF NEW CODE ###
-    # Add an argument for the drop tolerance.
     parser.add_argument("--drop_tol", type=float, default=1e-6, 
                         help="Tolerance for dropping small values from the learned preconditioner.")
-    ### END OF NEW CODE ###
-    
     return parser.parse_args()
 
 
@@ -163,12 +183,9 @@ def main():
         fill_in_k=fill_in_k_val
     )
     
-    ### START OF MODIFICATION ###
-    # Pass the drop_tol from the parsed arguments into the main test function.
     test(model, testdata_loader, test_device, folder,
          save_results=args.save, dataset=os.path.basename(args.dataset), 
          solver=args.solver, drop_tol=args.drop_tol)
-    ### END OF MODIFICATION ###
 
 
 if __name__ == "__main__":
