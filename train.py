@@ -117,7 +117,7 @@ def argparser():
     parser.add_argument("--skip_connections", action='store_true', default=True)
     parser.add_argument("--two_hop", action='store_true', default=False)
     parser.add_argument("--add_fill_in", action='store_true', help="Enable the heuristic fill-in preprocessing.")
-    parser.add_argument("--fill_in_k", type=int, default=5, help="Number of candidate fill-in edges to add per row.")
+    parser.add_argument("--fill_in_k", type=int, default=0, help="Number of candidate fill-in edges to add per row.")
     return parser.parse_args()
 
 if __name__ == "__main__":
