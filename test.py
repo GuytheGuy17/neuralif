@@ -43,8 +43,13 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
             prec = get_preconditioner(data, A_coo, method, model=model, device=device)
             p_time, breakdown, nnzL = prec.time, prec.breakdown, prec.nnz
             
-            b = data.x[:, 0].squeeze().to(torch.float64)
-            solution = data.s.squeeze().to(torch.float64) if hasattr(data, "s") else None
+            ### START OF DEVICE FIX ###
+            # All tensors for the solver must be moved to the target device.
+            # The 'device' variable is either 'cuda:0' or 'cpu'.
+            A = A.to(device)
+            b = data.x[:, 0].squeeze().to(torch.float64).to(device)
+            solution = data.s.squeeze().to(torch.float64).to(device) if hasattr(data, "s") else None
+            ### END OF DEVICE FIX ###
             
             start_solver = time_function()
             solver_settings = {"max_iter": 2 * data.num_nodes, "x0": None, "rtol": test_results.target}
@@ -78,6 +83,7 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
 
 
 def warmup(model, device):
+    # This function is already correct.
     if model is None: return
     model.to(device)
     model.eval()
@@ -91,15 +97,13 @@ def warmup(model, device):
 
 
 def argparser():
+    # This function is already correct.
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", type=str, default=None, help="A name for the test run folder.")
     parser.add_argument("--device", type=int, required=False, default=0, help="CUDA device index. Use -1 for CPU.")
     parser.add_argument("--model", type=str, required=False, default="none")
     parser.add_argument("--checkpoint", type=str, required=False, help="Path to the checkpoint *folder*.")
-    ### START OF CRASH FIX ###
-    # Corrected the method name from add_action to add_argument.
     parser.add_argument("--weights", type=str, required=False, default="final_model")
-    ### END OF CRASH FIX ###
     parser.add_argument("--solver", type=str, default="cg")
     parser.add_argument("--dataset", type=str, required=True, help="Path to the dataset root folder.")
     parser.add_argument("--subset", type=str, required=False, default="test")
@@ -108,6 +112,7 @@ def argparser():
 
 
 def main():
+    # This function is already correct.
     args = argparser()
     
     if torch.cuda.is_available() and args.device >= 0:
