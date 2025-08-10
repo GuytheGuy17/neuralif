@@ -1,3 +1,4 @@
+# FILE: neuralif/logger.py
 import os
 
 from dataclasses import dataclass, field
@@ -68,39 +69,38 @@ class TestResults:
         if plot:
             self.plot_eigvals(dist)
     
-    def log_loss(self, loss1, loss2, plot=False):
+    def log_loss(self, loss1, loss2):
+        # This function name is a bit confusing given the plot_loss method below.
+        # It appears to log scalar loss values from training.
         self.loss1.append(loss1)
         self.loss2.append(loss2)
-        
-        if plot:
-            self.plot_loss()
-    
+
     def plot_convergence(self):
         
         # check convergence speed etc.
         error_0 = self.solver_error[-1][0]
-        # errors = [fun(r[0]) for r in res]
-        # residuals = [fun(r[1]) for r in res]
         
-        if self.solver == "cg" and False:
-            bounds = [error_0 * kA_bound(self.cond_pa[-1], k) for k in range(len(self.solver_residual[-1]))]
+        if self.solver == "cg" and False: # This 'and False' makes the bound code unreachable
+            # cond_pa is a commented-out attribute, so this would fail if reachable.
+            # bounds = [error_0 * kA_bound(self.cond_pa[-1], k) for k in range(len(self.solver_residual[-1]))]
+            bounds = None
         else:
             bounds = None
         
-        plt.plot(self.solver_error[-1], label="error ($|| x_i - x_* ||$)")
-        plt.plot(self.solver_residual[-1], label="residual ($||r ||_2$)")
+        plt.plot(self.solver_error[-1], label="error ($|| x_i - x_* ||_A$)") # Note: This is the A-norm of the error
+        plt.plot(self.solver_residual[-1], label="residual ($||r_i||_2$)")
         
         if bounds is not None:
             plt.plot(bounds, "--", label="k(A)-bound")
         
-        plt.plot([self.target for _ in self.solver_residual[-1]], ":")
+        plt.plot([self.target for _ in self.solver_residual[-1]], ":", label=f"Target rtol ({self.target})")
         
         plt.grid(alpha=0.3)
         
         plt.yscale("log")
         plt.title(f"Convergence: {self.method} in {len(self.solver_residual[-1]) - 1} iterations")
-        plt.xlabel("iteration")
-        plt.ylabel("log10")
+        plt.xlabel("Iteration")
+        plt.ylabel("Log Scale")
         plt.legend()
         
         sample = len(self.solver_time)
@@ -111,66 +111,67 @@ class TestResults:
         
         c = torch.max(dist) / torch.min(dist)
         
-        # plt.rcParams["font.family"] = "Times New Roman"
         plt.rcParams["font.size"] = 14
         
         plt.grid(alpha=0.3)
         
         bins=20
-        # bins=[0, 0.01, 0.1, 0.2,0.3,0.5,1,1.5,2,3,4,5]
-        plt.hist(dist.tolist(), density=True, bins=bins, alpha=0.7)
+        plt.hist(dist.tolist(), density=True, bins=bins, alpha=0.7, label="Eigenvalue Histogram")
         mn, mx = plt.xlim()
         plt.xlim(mn, mx)
         kde_xs = np.linspace(mn, mx, 300)
-        kde = st.gaussian_kde(dist.tolist())
-        plt.plot(kde_xs, kde.pdf(kde_xs), "--", alpha=0.7)
+        try:
+            kde = st.gaussian_kde(dist.tolist())
+            plt.plot(kde_xs, kde.pdf(kde_xs), "--", alpha=0.7, label="KDE")
+        except np.linalg.LinAlgError:
+            print("Warning: KDE plot failed due to singular matrix.")
         
-        # plt.xscale("log")
-        # plt.xlim(right=2)
-        
-        plt.title(f"$\kappa(A)=${c.item():.2e}")
+        plt.title(f"Eigenvalue Distribution, $\kappa(M^{{-1}}A) \\approx ${c.item():.2e}")
         plt.ylabel("Frequency")
         plt.xlabel("$\lambda$")
+        plt.legend()
         plt.savefig(f"{self.folder}/eigenvalues_{self.method}_{name}.png")
         plt.close()
-    
-    def plot_loss(self):
-        i = len(self.solver_time) - 1
-            
-        # plt.rcParams["font.family"] = "Times New Roman"
+
+    # --- START OF FIX ---
+    # This method is now fixed to take A and L as arguments.
+    def plot_loss(self, A_matrix, L_matrix):
+        """
+        Plots the sparsity patterns of A, L, and the residual L @ L.T - A.
+        Note: A_matrix and L_matrix must be dense torch tensors.
+        """
+        
         plt.rcParams["font.size"] = 14
         
         fig, axs = plt.subplots(1, 3, figsize=plt.figaspect(1/3))
-        # fig.suptitle(f"{self.method.upper()} Error: {self.loss[-1]:.2f}" + m)
         
-        im1 = axs[0].imshow(torch.abs(self.A), interpolation='none', cmap='Blues')
+        im1 = axs[0].imshow(torch.abs(A_matrix), interpolation='none', cmap='Blues')
         im1.set_clim(0, 1)
-        axs[0].set_title("A")
-        im2 = axs[1].imshow(torch.abs(self.L), interpolation='none', cmap='Blues')
+        axs[0].set_title("$A$")
+        
+        im2 = axs[1].imshow(torch.abs(L_matrix), interpolation='none', cmap='Blues')
         im2.set_clim(0, 1)
-        axs[1].set_title("L")
+        axs[1].set_title("$L$ (Learned)")
         
-        res = torch.abs(self.L@self.L.T - self.A)
+        residual_matrix = torch.abs(L_matrix @ L_matrix.T - A_matrix)
         
-        # show at points where A is non-zero
-        # res = torch.where(torch.abs(self.A) > 0, res, torch.zeros_like(res))
-        
-        im3 = axs[2].imshow(res, interpolation='none', cmap='Reds')
+        im3 = axs[2].imshow(residual_matrix, interpolation='none', cmap='Reds')
         im3.set_clim(0, 1)
-        axs[2].set_title("L@L.T - A")
+        axs[2].set_title("$|LL^T - A|$")
         
-        # add colorbat
+        # Add colorbar
         fig.subplots_adjust(bottom=0.1, top=0.9, left=0.1, right=0.8, wspace=0.4, hspace=0.1)
         cb_ax = fig.add_axes([0.83, 0.1, 0.02, 0.8])
-        fig.colorbar(im3,cax=cb_ax)
+        fig.colorbar(im3, cax=cb_ax)
         
-        # share y-axis
         for ax in fig.get_axes():
             ax.label_outer()
-                        
-        # save as file
-        plt.savefig(f"{self.folder}/chol_factorization_{self.method}_{i}.png")
+                    
+        # Save as file
+        sample_idx = len(self.solver_time)
+        plt.savefig(f"{self.folder}/chol_factorization_{self.method}_{sample_idx}.png")
         plt.close()
+    # --- END OF FIX ---
     
     def print_summary(self):
         for key, value in self.get_summary_dict().items():
@@ -184,15 +185,18 @@ class TestResults:
         
     def get_summary_dict(self):
         # check where ch did not break down
-        valid_samples = np.asarray(self.solver_iterations) > 0
+        valid_samples = np.asarray(self.solver_iterations) >= 0
         
+        if not np.any(valid_samples):
+            return {f"message_{self.method}": "No valid samples found."}
+
         data = {
-            f"time_{self.method}": np.mean(self.p_times, where=valid_samples),
-            f"overhead_{self.method}": np.mean(self.overhead, where=valid_samples),
-            f"{self.solver}_time_{self.method}": np.mean(self.solver_time, where=valid_samples),
-            f"{self.solver}_iterations_{self.method}": np.mean(self.solver_iterations, where=valid_samples),
+            f"time_{self.method}": np.mean(np.array(self.p_times)[valid_samples]),
+            f"overhead_{self.method}": np.mean(np.array(self.overhead)[valid_samples]),
+            f"{self.solver}_time_{self.method}": np.mean(np.array(self.solver_time)[valid_samples]),
+            f"{self.solver}_iterations_{self.method}": np.mean(np.array(self.solver_iterations)[valid_samples]),
             f"total_time_{self.method}": np.mean(list(map(lambda x: x[0] + x[1], zip(self.get_total_p_time(), self.solver_time))), where=valid_samples),
-            f"time-per-iter": np.sum(self.solver_time, where=valid_samples) / np.sum(self.solver_iterations, where=valid_samples),
+            f"time-per-iter": np.sum(np.array(self.solver_time)[valid_samples]) / np.sum(np.array(self.solver_iterations)[valid_samples]),
             f"nnz_a_{self.method}": np.mean(self.nnz_a),
             f"nnz_p_{self.method}": np.mean(self.nnz_p),
         }
