@@ -17,7 +17,7 @@ from apps.data import get_dataloader
 
 
 @torch.inference_mode()
-def test(model, test_loader, device, folder, save_results=False, dataset="random", solver="cg"):
+def test(model, test_loader, device, folder, save_results=False, dataset="random", solver="cg", drop_tol=1e-6):
     if save_results:
         os.makedirs(folder, exist_ok=True)
 
@@ -40,16 +40,16 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
                                        dtype=torch.float64)
             A = A_coo.to_sparse_csr()
 
-            prec = get_preconditioner(data, A_coo, method, model=model, device=device)
+            ### START OF MODIFICATION ###
+            # Pass the drop_tol to the get_preconditioner function.
+            prec = get_preconditioner(data, A_coo, method, model=model, device=device, drop_tol=drop_tol)
+            ### END OF MODIFICATION ###
+            
             p_time, breakdown, nnzL = prec.time, prec.breakdown, prec.nnz
             
-            ### START OF DEVICE FIX ###
-            # All tensors for the solver must be moved to the target device.
-            # The 'device' variable is either 'cuda:0' or 'cpu'.
             A = A.to(device)
             b = data.x[:, 0].squeeze().to(torch.float64).to(device)
             solution = data.s.squeeze().to(torch.float64).to(device) if hasattr(data, "s") else None
-            ### END OF DEVICE FIX ###
             
             start_solver = time_function()
             solver_settings = {"max_iter": 2 * data.num_nodes, "x0": None, "rtol": test_results.target}
@@ -83,7 +83,6 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
 
 
 def warmup(model, device):
-    # This function is already correct.
     if model is None: return
     model.to(device)
     model.eval()
@@ -97,7 +96,6 @@ def warmup(model, device):
 
 
 def argparser():
-    # This function is already correct.
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", type=str, default=None, help="A name for the test run folder.")
     parser.add_argument("--device", type=int, required=False, default=0, help="CUDA device index. Use -1 for CPU.")
@@ -108,11 +106,17 @@ def argparser():
     parser.add_argument("--dataset", type=str, required=True, help="Path to the dataset root folder.")
     parser.add_argument("--subset", type=str, required=False, default="test")
     parser.add_argument("--save", action='store_true', default=False)
+    
+    ### START OF NEW CODE ###
+    # Add an argument for the drop tolerance.
+    parser.add_argument("--drop_tol", type=float, default=1e-6, 
+                        help="Tolerance for dropping small values from the learned preconditioner.")
+    ### END OF NEW CODE ###
+    
     return parser.parse_args()
 
 
 def main():
-    # This function is already correct.
     args = argparser()
     
     if torch.cuda.is_available() and args.device >= 0:
@@ -159,8 +163,12 @@ def main():
         fill_in_k=fill_in_k_val
     )
     
+    ### START OF MODIFICATION ###
+    # Pass the drop_tol from the parsed arguments into the main test function.
     test(model, testdata_loader, test_device, folder,
-         save_results=args.save, dataset=os.path.basename(args.dataset), solver=args.solver)
+         save_results=args.save, dataset=os.path.basename(args.dataset), 
+         solver=args.solver, drop_tol=args.drop_tol)
+    ### END OF MODIFICATION ###
 
 
 if __name__ == "__main__":

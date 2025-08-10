@@ -6,7 +6,6 @@ import scipy.sparse.linalg
 from neuralif.utils import torch_sparse_to_scipy, time_function
 
 class Preconditioner:
-    # ... (implementation is unchanged)
     def __init__(self):
         self.time = 0.0
         self.breakdown = False
@@ -20,7 +19,6 @@ class Preconditioner:
         return b
 
 class Jacobi(Preconditioner):
-    # ... (implementation is unchanged)
     def __init__(self, A_torch: torch.Tensor):
         super().__init__()
         start = time_function()
@@ -43,7 +41,6 @@ class Jacobi(Preconditioner):
         return self.inv_diag.to(b.device, b.dtype) * b
 
 class ScipyILU(Preconditioner):
-    # ... (implementation is unchanged)
     def __init__(self, A_torch: torch.Tensor):
         super().__init__()
         start_time = time_function()
@@ -68,6 +65,7 @@ class ScipyILU(Preconditioner):
         return torch.from_numpy(x_np).to(b.device, b.dtype)
 
 class LearnedPreconditioner(Preconditioner):
+    # The constructor already correctly accepts and uses drop_tol. No changes needed here.
     def __init__(self, data_on_device, model, drop_tol=1e-6):
         super().__init__()
         self.model = model
@@ -79,11 +77,8 @@ class LearnedPreconditioner(Preconditioner):
     def _compute_preconditioner(self, data_on_device):
         self.model.eval()
         with torch.no_grad():
-            L_torch, U_torch, _ = self.model(data_on_device)
+            L_torch, _, _ = self.model(data_on_device)
         
-        # --- START OF MODIFICATION ---
-        # Thresholding Step: Remove near-zero entries predicted by the GNN
-        # before creating the final solver. This is the "pruning" step.
         L_final = L_torch.coalesce()
         mask = L_final.values().abs() > self.drop_tol
         L_final = torch.sparse_coo_tensor(
@@ -92,11 +87,8 @@ class LearnedPreconditioner(Preconditioner):
             L_final.shape
         ).coalesce()
         
-        U_final = torch.sparse_coo_tensor(L_final.indices().flip(0), L_final.values(), L_final.shape).coalesce()
-        
         self.L_scipy = torch_sparse_to_scipy(L_final.cpu()).tocsc()
-        self.U_scipy = torch_sparse_to_scipy(U_final.cpu()).tocsc()
-        # --- END OF MODIFICATION ---
+        self.U_scipy = self.L_scipy.T.tocsc()
     
     @property
     def nnz(self):
@@ -105,18 +97,22 @@ class LearnedPreconditioner(Preconditioner):
         return 0
 
     def solve(self, b: torch.Tensor) -> torch.Tensor:
-        # The solve method is now simpler as the factors are pre-computed and pruned
         b_np = b.cpu().numpy()
         y = scipy.sparse.linalg.spsolve_triangular(self.L_scipy, b_np, lower=True)
         x_np = scipy.sparse.linalg.spsolve_triangular(self.U_scipy, y, lower=False)
         return torch.from_numpy(x_np).to(b.device, b.dtype)
 
-def get_preconditioner(data, A_torch_cpu, method: str, model=None, device='cpu') -> Preconditioner:
+### START OF MODIFICATION ###
+# Update the function signature to accept the drop_tol parameter.
+def get_preconditioner(data, A_torch_cpu, method: str, model=None, device='cpu', drop_tol=1e-6) -> Preconditioner:
+### END OF MODIFICATION ###
     if method == "learned":
         if model is None: raise ValueError("A model must be provided for the 'learned' method.")
-        # Pass the original data object, as the dataloader has already applied the transform
         data_on_device = data.to(device)
-        return LearnedPreconditioner(data_on_device, model)
+        ### START OF MODIFICATION ###
+        # Pass the drop_tol value to the LearnedPreconditioner constructor.
+        return LearnedPreconditioner(data_on_device, model, drop_tol=drop_tol)
+        ### END OF MODIFICATION ###
     
     if method == "baseline":
         return Preconditioner()
