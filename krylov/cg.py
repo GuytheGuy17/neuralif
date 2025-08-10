@@ -85,7 +85,7 @@ def preconditioned_conjugate_gradient(A, b, M, x0=None, x_true=None, rtol=1e-6, 
         
         alpha = rz_old / (torch.inner(pk, Ap) + eps)
         x_hat = x_hat + alpha * pk
-        rk = rk - alpha * pk # Note: This rk is one iteration ahead of zk
+        rk = rk - alpha * Ap 
         
         res = stopping_criterion(A, rk, b)
         errors.append((torch.tensor(0.0, dtype=b.dtype), res))
