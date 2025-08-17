@@ -52,7 +52,7 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
             )
             A_csr_cpu = A_coo_cpu.to_sparse_csr()
             
-            ### START OF CRITICAL FIX ###
+           
             # The preconditioner is ALWAYS created on the CPU using CPU data.
             # This is crucial for Jacobi and ScipyILU.
             prec = get_preconditioner(data, A_coo_cpu, method, model=model, device=device, drop_tol=drop_tol)
@@ -62,7 +62,7 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
             A = A_csr_cpu.to(device)
             b = data.x[:, 0].squeeze().to(torch.float64).to(device)
             solution = data.s.squeeze().to(torch.float64).to(device) if hasattr(data, "s") else None
-            ### END OF CRITICAL FIX ###
+            
             
             start_solver = time_function()
             solver_settings = {"max_iter": 2 * data.num_nodes, "x0": None, "rtol": test_results.target}

@@ -1,4 +1,3 @@
-# FILE: apps/preprocess.py
 import torch
 from torch_geometric.transforms import BaseTransform
 from torch_geometric.utils import to_scipy_sparse_matrix, from_scipy_sparse_matrix
@@ -31,18 +30,18 @@ class AddHeuristicFillIn(BaseTransform):
 
         num_nodes = data.num_nodes
         
-        # 1. Get the SciPy version of the matrix A, ensuring edge_attr is 1D.
+        # Get the SciPy version of the matrix A, ensuring edge_attr is 1D.
         edge_values = data.edge_attr[:, 0] if data.edge_attr.dim() > 1 else data.edge_attr.squeeze()
         A = to_scipy_sparse_matrix(data.edge_index, edge_values, num_nodes).tocsr()
         
-        # 2. Calculate the pattern of A^2 to find candidate edges (2-hop neighbors).
+        # Calculate the pattern of A^2 to find candidate edges (2-hop neighbors).
         A_squared_pattern = (A @ A).astype(bool).tocsr()
         
-        # 3. Remove original edges to isolate new candidate edges.
+        # Remove original edges to isolate new candidate edges.
         candidate_edges_matrix = A_squared_pattern - A.astype(bool)
         candidate_edges_matrix.eliminate_zeros()
         
-        # 4. Use Top-K selection to choose the best new edges for each row.
+        # Use Top-K selection to choose the best new edges for each row.
         new_edges_rows = []
         new_edges_cols = []
         
@@ -66,16 +65,16 @@ class AddHeuristicFillIn(BaseTransform):
             data.edge_attr = torch.cat([data.edge_attr, fill_in_feature], dim=1)
             return data
 
-        # 5. Create the new edge_index for the fill-in.
+        # Create the new edge_index for the fill-in.
         # We need to add both (i, j) and (j, i) to keep the graph undirected.
         lower_triangle_edges = torch.tensor([new_edges_rows, new_edges_cols], dtype=torch.long)
         upper_triangle_edges = torch.tensor([new_edges_cols, new_edges_rows], dtype=torch.long)
         new_edge_index = torch.cat([lower_triangle_edges, upper_triangle_edges], dim=1)
         
-        # 6. Combine original and new edges.
+        # Combine original and new edges.
         combined_edge_index = torch.cat([data.edge_index, new_edge_index], dim=1)
         
-        # 7. Create the new edge attributes.
+        # Create the new edge attributes.
         if data.edge_attr.dim() == 1:
             data.edge_attr = data.edge_attr.unsqueeze(-1)
             

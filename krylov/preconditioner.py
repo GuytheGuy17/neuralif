@@ -11,7 +11,7 @@ class Preconditioner:
         self.breakdown = False
         self.breakdown_reason = ""
     def __call__(self, b: torch.Tensor) -> torch.Tensor:
-        # 'b' here is the vector passed from the solver, e.g., the residual 'rk'
+        # 'b' here is the vector passed from the solver
         return self.solve(b)
     @property
     def nnz(self):
@@ -40,7 +40,7 @@ class Jacobi(Preconditioner):
     def nnz(self):
         return self._nnz
     
-    ### START OF CRITICAL FIX ###
+   
     # The method must operate on the input vector 'b' (which is the residual 'rk' from the solver).
     # It must also handle moving the data between devices correctly.
     def solve(self, b: torch.Tensor) -> torch.Tensor:
@@ -49,11 +49,9 @@ class Jacobi(Preconditioner):
         # Move the inverse diagonal to the correct device for the multiplication
         inv_diag_on_device = self.inv_diag.to(b.device, b.dtype)
         return inv_diag_on_device * b
-    ### END OF CRITICAL FIX ###
+    
 
-# ... (ScipyILU and LearnedPreconditioner are more complex, let's focus on fixing Jacobi first) ...
-# The ScipyILU and LearnedPreconditioner already correctly handle device transfers
-# because they move the input vector to the CPU explicitly.
+
 
 class ScipyILU(Preconditioner):
     def __init__(self, A_torch: torch.Tensor):

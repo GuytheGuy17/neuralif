@@ -7,11 +7,8 @@ import scipy
 from scipy.sparse import coo_matrix
 from tqdm import tqdm
 
-# --- START OF DEFINITIVE FIX ---
-# This adds the project's root directory ('neuralif/') to the Python path.
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-# --- END OF DEFINITIVE FIX ---
 
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from apps.data import matrix_to_graph
 
 def generate_sparse_spd_with_target_density(n, target_density, alpha=1e-3, random_state=0, compute_solution=True, tol=0.1, max_iters=20):

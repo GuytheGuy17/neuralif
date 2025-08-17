@@ -1,10 +1,7 @@
-# FILE: neuralif/loss.py
 import warnings
 import torch
 from torch_geometric.utils import degree
 
-# The 'graph_to_matrix' import is no longer needed here.
-# from apps.data import graph_to_matrix
 
 warnings.filterwarnings('ignore', '.*Sparse CSR tensor support is in beta state.*')
 
@@ -108,9 +105,6 @@ def loss(output, data, config=None, **kwargs):
     device = output.device if not isinstance(output, tuple) else output[0].device
     L_factor = output if not isinstance(output, tuple) else output[0]
 
-    # --- START OF FIX ---
-    # Reconstruct the ORIGINAL matrix A by filtering out fill-in edges. This is
-    # crucial for training the model against the correct objective.
     if data.edge_attr.dim() > 1 and data.edge_attr.shape[1] > 1:
         # This branch handles graphs that have the 2D fill-in features
         is_fill_in_flag = data.edge_attr[:, 1]
@@ -128,7 +122,7 @@ def loss(output, data, config=None, **kwargs):
         edge_attr_A,
         (data.num_nodes, data.num_nodes)
     ).to(device)
-    # --- END OF FIX ---
+    
 
     if config == 'sketch_pcg':
         final_loss = improved_sketch_with_pcg(L_factor, A, **kwargs)
