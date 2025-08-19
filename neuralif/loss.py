@@ -25,7 +25,7 @@ def iterative_triangular_solve(A_sparse, b_vec, iterations=5):
     n = A_sparse.shape[0]
     temp_diag = torch.ones(n, device=A_sparse.device, dtype=A_sparse.dtype)
     temp_diag.scatter_(0, diag_indices, diag_values)
-    D_inv = 1.0 / (temp_diag + 1e-9) # Use float32-safe epsilon
+    D_inv = 1.0 / (temp_diag + 1e-9) 
 
     for _ in range(iterations):
         x = x + D_inv * (b_vec - A_sparse @ x)
@@ -38,7 +38,7 @@ def pcg_proxy(L_mat, U_mat, A, cg_steps: int = 3, preconditioner_solve_steps: in
     A robust and differentiable PCG proxy that uses the fast iterative triangular solve.
     """
     n, device, dtype = A.shape[0], A.device, A.dtype
-    # Epsilon for float32 stability.
+    
     eps = torch.finfo(dtype).eps * 100
     
     torch.manual_seed(0)
@@ -57,7 +57,7 @@ def pcg_proxy(L_mat, U_mat, A, cg_steps: int = 3, preconditioner_solve_steps: in
     for i in range(cg_steps):
         Ap = A @ p
         pAp = (p * Ap).sum()
-        if torch.abs(pAp) < eps: break # Use float32-safe check
+        if torch.abs(pAp) < eps: break 
         alpha = rz_old / pAp
         x = x + alpha * p
         r = r - alpha * Ap
@@ -65,7 +65,7 @@ def pcg_proxy(L_mat, U_mat, A, cg_steps: int = 3, preconditioner_solve_steps: in
         y = iterative_triangular_solve(L_mat, r.squeeze(), iterations=preconditioner_solve_steps)
         z = iterative_triangular_solve(U_mat, y.squeeze(), iterations=preconditioner_solve_steps)
         rz_new = (r * z).sum()
-        if torch.abs(rz_old) < eps: break # Use float32-safe check
+        if torch.abs(rz_old) < eps: break 
         beta = rz_new / rz_old
         p = z + beta * p
         rz_old = rz_new

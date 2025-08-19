@@ -58,7 +58,7 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
             prec = get_preconditioner(data, A_coo_cpu, method, model=model, device=device, drop_tol=drop_tol)
             p_time, breakdown, nnzL = prec.time, prec.breakdown, prec.nnz
             
-            # NOW, move the tensors needed FOR THE SOLVER to the target device.
+            # move the tensors needed for the solver to the target device.
             A = A_csr_cpu.to(device)
             b = data.x[:, 0].squeeze().to(torch.float64).to(device)
             solution = data.s.squeeze().to(torch.float64).to(device) if hasattr(data, "s") else None
@@ -94,7 +94,7 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
         if save_results: test_results.save_results()
         test_results.print_summary()
 
-# ... (warmup, argparser, main functions are unchanged and correct) ...
+
 def warmup(model, device):
     if model is None: return
     model.to(device)

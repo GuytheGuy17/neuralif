@@ -41,10 +41,9 @@ class Jacobi(Preconditioner):
         return self._nnz
     
    
-    # The method must operate on the input vector 'b' (which is the residual 'rk' from the solver).
-    # It must also handle moving the data between devices correctly.
+    # The method must operate on the input vector 'b' 
     def solve(self, b: torch.Tensor) -> torch.Tensor:
-        # 'b' is the input tensor from the solver (e.g., on GPU)
+        # 'b' is the input tensor from the solver
         # self.inv_diag is on the CPU
         # Move the inverse diagonal to the correct device for the multiplication
         inv_diag_on_device = self.inv_diag.to(b.device, b.dtype)

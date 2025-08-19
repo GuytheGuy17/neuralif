@@ -18,7 +18,7 @@ def conjugate_gradient(A, b, x0=None, x_true=None, rtol=1e-6, max_iter=None):
     if max_iter is None:
         max_iter = 2 * len(b)
     
-    # Epsilon for float32 stability. 1e-9 is a safe choice.
+    # Epsilon for float32 stability
     eps = torch.finfo(b.dtype).eps * 100
 
     x_hat = x0 if x0 is not None else torch.zeros_like(b)
@@ -63,7 +63,7 @@ def preconditioned_conjugate_gradient(A, b, M, x0=None, x_true=None, rtol=1e-6, 
     if max_iter is None:
         max_iter = 2 * len(b)
 
-    # Epsilon for float32 stability.
+    
     eps = torch.finfo(b.dtype).eps * 100
 
     x_hat = x0 if x0 is not None else torch.zeros_like(b)
