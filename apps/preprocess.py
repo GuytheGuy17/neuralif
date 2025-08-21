@@ -20,7 +20,7 @@ class AddHeuristicFillIn(BaseTransform):
         Applies the transform to a single data object.
         """
         if self.K == 0:
-            # If K is 0, do nothing but ensure the binary feature exists for consistency
+            # If K is 0 do nothing but ensure the binary feature exists for consistency
             if data.edge_attr.dim() == 1:
                 data.edge_attr = data.edge_attr.unsqueeze(-1)
             
@@ -30,7 +30,7 @@ class AddHeuristicFillIn(BaseTransform):
 
         num_nodes = data.num_nodes
         
-        # Get the SciPy version of the matrix A, ensuring edge_attr is 1D
+        # Get the SciPy version of the matrix A and make edge_attr is 1D
         edge_values = data.edge_attr[:, 0] if data.edge_attr.dim() > 1 else data.edge_attr.squeeze()
         A = to_scipy_sparse_matrix(data.edge_index, edge_values, num_nodes).tocsr()
         
@@ -66,7 +66,7 @@ class AddHeuristicFillIn(BaseTransform):
             return data
 
         # Create the new edge_index for the fill-in
-        # We need to add both (i, j) and (j, i) to keep the graph undirected
+        # Both (i, j) and (j, i) to keep the graph undirected
         lower_triangle_edges = torch.tensor([new_edges_rows, new_edges_cols], dtype=torch.long)
         upper_triangle_edges = torch.tensor([new_edges_cols, new_edges_rows], dtype=torch.long)
         new_edge_index = torch.cat([lower_triangle_edges, upper_triangle_edges], dim=1)
@@ -78,10 +78,10 @@ class AddHeuristicFillIn(BaseTransform):
         if data.edge_attr.dim() == 1:
             data.edge_attr = data.edge_attr.unsqueeze(-1)
             
-        # Original edges have their value and a '0' for the is_fill_in flag
+        # Original edges have their value and a 0 for the is_fill_in flag
         original_attrs = torch.cat([data.edge_attr, torch.zeros(data.edge_attr.size(0), 1, device=data.edge_attr.device)], dim=1)
         
-        # New edges have a value of 0 and a '1' for the is_fill_in flag
+        # New edges have a value of 0 and a 1 for the is_fill_in flag
         new_attrs = torch.zeros(new_edge_index.size(1), 2, device=data.edge_attr.device)
         new_attrs[:, 1] = 1.0
         

@@ -11,65 +11,69 @@ from tqdm import tqdm
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from apps.data import matrix_to_graph
 
+# Generate a random sparse SPD matrix with a target density
 def generate_sparse_spd_with_target_density(n, target_density, alpha=1e-3, random_state=0, compute_solution=True, tol=0.1, max_iters=20):
     """
     Generates a random sparse SPD matrix 'A' with a final density close to 'target_density'.
     This version uses the M@M.T method, which is known to produce matrices of the
     correct difficulty (~914 iterations) for a valid comparison to the reference paper.
     """
-    rng = np.random.RandomState(random_state)
-    target_nnz = int(target_density * n * n)
+    rng = np.random.RandomState(random_state) # Ensure reproducibility
+    target_nnz = int(target_density * n * n) # Target number of non-zeros
     if target_nnz <= 0:
         raise ValueError("Target density is too low, resulting in zero or negative target non-zeros.")
-
-    m_density_est = np.sqrt(target_density / n) if target_density > 0 else 0
+    # Initial estimate for the density of M
+    m_density_est = np.sqrt(target_density / n) if target_density > 0 else 0 
 
     A_iter = None
     for i in range(max_iters):
-        m_nnz = int(m_density_est * n * n)
+        m_nnz = int(m_density_est * n * n)  
         m_nnz = max(1, min(m_nnz, n * n - 1))
-        
+        # Generate random coordinates for the sparse matrix M
         rows = rng.randint(0, n, size=m_nnz)
         cols = rng.randint(0, n, size=m_nnz)
-        
-        unique_coords = sorted(list(set(zip(rows, cols))))
-        rows_unique, cols_unique = zip(*unique_coords)
-        vals = rng.normal(0, 1, size=len(rows_unique))
-        
-        M_iter = coo_matrix((vals, (rows_unique, cols_unique)), shape=(n, n)).tocsr()
-        A_iter = (M_iter @ M_iter.T)
-        
+        # Ensure unique coordinates
+        unique_coords = sorted(list(set(zip(rows, cols)))) 
+        rows_unique, cols_unique = zip(*unique_coords) # Convert to unique row/col indices
+        vals = rng.normal(0, 1, size=len(rows_unique)) # Generate random values
+        # Create the sparse matrix M
+        M_iter = coo_matrix((vals, (rows_unique, cols_unique)), shape=(n, n)).tocsr() # Convert to CSR format for efficiency
+        A_iter = (M_iter @ M_iter.T) 
+        # Add a small diagonal shift to ensure SPD
         current_nnz = A_iter.nnz
         if target_nnz == 0:
              error_ratio = 1.0 if current_nnz == 0 else float('inf')
         else:
             error_ratio = current_nnz / target_nnz
-        
+        # Adjust the density estimate based on the error ratio
         if abs(1 - error_ratio) < tol:
             break
-        
+        # Adjust the density estimate using a heuristic
         adjustment_factor = np.sqrt(1 / error_ratio) if error_ratio > 0 else 2.0
         m_density_est *= (1 + (adjustment_factor - 1) * 0.75)
     else:
         tqdm.write(f"\nWarning: Density target not met for seed {random_state}. Using best effort.")
-    
+    # Finalise the matrix A
     A = A_iter + alpha * scipy.sparse.identity(n, format='csc')
-    
+    # Ensure the matrix is symmetric and positive definite
     A.eliminate_zeros()
     tqdm.write(f"Generated matrix with {100 * (A.nnz / n**2) :.4f}% density ({A.nnz} non-zeros) for seed {random_state}")
+    
 
-    b = rng.uniform(0, 1, size=n)
-    x = None
-    if compute_solution:
-        try:
+    b = rng.uniform(0, 1, size=n) # Generate a random vector b
+    x = None # Placeholder for the solution vector
+    if compute_solution: # Compute the solution if requested
+        try: # Use CG to find the solution
             x, info = scipy.sparse.linalg.cg(A, b, rtol=1e-10, maxiter=max(5000, 2 * n))
             if info != 0:
                  tqdm.write(f"  -> WARNING: CG solve for ground-truth did not converge. Info: {info}")
         except Exception as e:
             tqdm.write(f"  -> WARNING: CG solve for ground-truth failed. Error: {e}")
     
-    return A, b, x
+    return A, b, x 
 
+
+# Main function to generate and save the dataset
 def main(args):
     """Main function to generate and save the dataset."""
     print("\n" + "-"*60)
@@ -80,7 +84,7 @@ def main(args):
     print(f" -> Output directory: {os.path.abspath(args.output_dir)}")
     print("-"*60 + "\n")
     os.makedirs(args.output_dir, exist_ok=True)
-    
+    # Generate samples
     for i in tqdm(range(args.num_samples), desc="Generating Samples"):
         random_state = args.seed + i
         
@@ -92,14 +96,14 @@ def main(args):
             compute_solution=not args.no_solution
         )
         
-        graph = matrix_to_graph(A, b)
+        graph = matrix_to_graph(A, b)   # Convert to graph format
         if x is not None:
-            graph.s = torch.tensor(x, dtype=torch.float32)
+            graph.s = torch.tensor(x, dtype=torch.float32) # Ensure solution is in float32
         
-        save_path = os.path.join(args.output_dir, f'graph_{args.matrix_size}_{i}.pt')
+        save_path = os.path.join(args.output_dir, f'graph_{args.matrix_size}_{i}.pt') # Save the graph
         torch.save(graph, save_path)
             
-    print("\n" + "-"*60, "\nDataset generation complete.\n" + "-"*60)
+    print("\n" + "-"*60, "\nDataset generation complete.\n" + "-"*60) # Final message
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Generator for synthetic SPD matrices.")
