@@ -1,6 +1,6 @@
 import torch
 
-
+# This function implements the stopping criterion for the conjugate gradient method.
 def stopping_criterion(A, rk, b):
     """
     Calculates the relative residual squared norm: ||r_k||^2 / ||b||^2.

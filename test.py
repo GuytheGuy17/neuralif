@@ -55,7 +55,7 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
             # Move data to the target device
            
             # The preconditioner is ALWAYS created on the CPU using CPU data.
-            # This is crucial for Jacobi and ScipyILU.
+            # This is crucial for Jacobi
             prec = get_preconditioner(data, A_coo_cpu, method, model=model, device=device, drop_tol=drop_tol)
             p_time, breakdown, nnzL = prec.time, prec.breakdown, prec.nnz
             

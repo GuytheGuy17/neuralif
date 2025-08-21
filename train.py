@@ -75,18 +75,19 @@ def main(config):
             total_loss = main_loss
             if reg is not None and config["regularizer"] > 0:
                 total_loss += config["regularizer"] * reg
-            
+            #    Backpropagation step
+            #    The total loss is computed and backpropagated.
             total_loss.backward()
-            
+            #   If gradient clipping is specified, it is applied before the optimizer step
             if config["gradient_clipping"]:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), config["gradient_clipping"])
-            
+            #   Optimizer step
             optimizer.step()
             running_loss += total_loss.item()
-            
+            #   Print the loss for the current batch
         avg_epoch_loss = running_loss / len(train_loader)
         print(f"Epoch {epoch+1}/{config['num_epochs']} \t Training Loss: {avg_epoch_loss:.6f} \t Time: {time.perf_counter() - start_epoch:.2f}s")
-        
+        #   Save the model state after each epoch if specified
         if config["save"]:
             torch.save(model.state_dict(), f"{folder}/model_epoch{epoch+1}.pt")
             
@@ -94,6 +95,8 @@ def main(config):
     if config["save"]:
         torch.save(model.state_dict(), f"{folder}/final_model.pt")
 
+# This function parses command line arguments for the training script.
+# It sets default values and allows customisation of the training process.
 def argparser():
     parser = argparse.ArgumentParser(description="Training script for NeuralIF.")
     parser.add_argument("--name", type=str, default="training_run")
@@ -123,6 +126,8 @@ def argparser():
     parser.add_argument("--fill_in_k", type=int, default=0, help="Number of candidate fill-in edges to add per row.")
     return parser.parse_args()
 
+# This is the entry point of the script.
+# It parses the command line arguments and calls the main function with the parsed configuration.
 if __name__ == "__main__":
     args = argparser()
     main(vars(args))

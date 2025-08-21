@@ -3,6 +3,8 @@ from torch_geometric.transforms import BaseTransform
 from torch_geometric.utils import to_scipy_sparse_matrix, from_scipy_sparse_matrix
 import numpy as np
 
+# This transform adds candidate "fill-in" edges to a graph based on the sparsity pattern of the matrix A^2.
+# It is designed to be used with PyTorch Geometric datasets.
 class AddHeuristicFillIn(BaseTransform):
     """
     A PyTorch Geometric transform that adds candidate "fill-in" edges to a graph
@@ -14,7 +16,9 @@ class AddHeuristicFillIn(BaseTransform):
             K (int): The number of top candidate edges to add per row.
         """
         self.K = K
-
+    
+    #   This method applies the transform to a single data object.
+    #   It computes the fill-in edges and updates the edge_index and edge_attr attributes of the data object.
     def __call__(self, data):
         """
         Applies the transform to a single data object.
@@ -27,7 +31,8 @@ class AddHeuristicFillIn(BaseTransform):
             fill_in_feature = torch.zeros(data.edge_attr.size(0), 1, device=data.edge_attr.device)
             data.edge_attr = torch.cat([data.edge_attr, fill_in_feature], dim=1)
             return data
-
+        
+        
         num_nodes = data.num_nodes
         
         # Get the SciPy version of the matrix A and make edge_attr is 1D
@@ -93,5 +98,6 @@ class AddHeuristicFillIn(BaseTransform):
         
         return data
 
+    # This method returns a string representation of the transform.
     def __repr__(self) -> str:
         return f'{self.__class__.__name__}(K={self.K})'
