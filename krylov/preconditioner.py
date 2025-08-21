@@ -94,7 +94,7 @@ class LearnedPreconditioner(Preconditioner):
     def _compute_preconditioner(self, data_on_device): 
         self.model.eval()
         with torch.no_grad():
-            L_torch, _, _ = self.model(data_on_device)
+            L_torch, U_torch, _ = self.model(data_on_device)
         # Ensure L_torch is a sparse COO tensor
         L_final = L_torch.coalesce()
         mask = L_final.values().abs() > self.drop_tol
@@ -104,16 +104,26 @@ class LearnedPreconditioner(Preconditioner):
             L_final.values()[mask],
             L_final.shape
         ).coalesce()
+
+        # --- Process U ---
+        # 2. Apply the same filtering to the U matrix from the model.
+        U_final = U_torch.coalesce()
+        mask_U = U_final.values().abs() > self.drop_tol
+        U_final = torch.sparse_coo_tensor(
+            U_final.indices()[:, mask_U],
+            U_final.values()[mask_U],
+            U_final.shape
+        ).coalesce()
         # Convert to CSR format for efficient solving
         self.L_scipy = torch_sparse_to_scipy(L_final.cpu()).tocsc()
-        self.U_scipy = self.L_scipy.T.tocsc() # Transpose for upper triangular part
+        self.U_scipy = torch_sparse_to_scipy(U_final.cpu()).tocsc()
     
     @property
     def nnz(self):
         if self.L_scipy is not None:
             return self.L_scipy.nnz
         return 0
-
+    # This method solves the linear system L * y = b using SciPy's triangular solver.
     def solve(self, b: torch.Tensor) -> torch.Tensor:
         # Correctly moves input 'b' to CPU for SciPy
         b_np = b.cpu().numpy()
@@ -121,7 +131,8 @@ class LearnedPreconditioner(Preconditioner):
         x_np = scipy.sparse.linalg.spsolve_triangular(self.U_scipy, y, lower=False)
         # Correctly returns tensor to original device
         return torch.from_numpy(x_np).to(b.device, b.dtype)
-
+    
+# This function creates a preconditioner based on the method specified.
 def get_preconditioner(data, A_torch_cpu, method: str, model=None, device='cpu', drop_tol=1e-6) -> Preconditioner:
     if method == "learned":
         if model is None: raise ValueError("A model must be provided for the 'learned' method.")
