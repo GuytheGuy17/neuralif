@@ -14,7 +14,7 @@ from neuralif.utils import time_function, load_checkpoint
 from neuralif.logger import TestResults
 from apps.data import get_dataloader
 
-
+# This function loads a model from a checkpoint and returns it along with the training configuration.
 @torch.inference_mode()
 def test(model, test_loader, device, folder, save_results=False, dataset="random", solver="cg", drop_tol=1e-6):
     if save_results:
@@ -24,9 +24,9 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
     print(f"Solver:\t{solver} solver\n")
     
     methods = ["learned"] if model is not None else ["baseline", "jacobi", "ic"]
-
+    # Warmup the model if it exists
     for method in methods:
-        print(f"Testing {method} preconditioner")
+        print(f"Testing {method} preconditioner") 
         test_results = TestResults(method, dataset, folder,
                                    model_name=f"\n{model.__class__.__name__}" if method == "learned" else "",
                                    target=1e-6, solver=solver)
@@ -43,7 +43,8 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
             else:
                 edge_index_for_A = data.edge_index
                 edge_attr_for_A = data.edge_attr.squeeze()
-
+            # Create the COO tensor for A on CPU
+            # This is crucial for Jacobi and ScipyILU preconditioners.
             A_coo_cpu = torch.sparse_coo_tensor(
                 edge_index_for_A,
                 edge_attr_for_A,
@@ -51,7 +52,7 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
                 dtype=torch.float64
             )
             A_csr_cpu = A_coo_cpu.to_sparse_csr()
-            
+            # Move data to the target device
            
             # The preconditioner is ALWAYS created on the CPU using CPU data.
             # This is crucial for Jacobi and ScipyILU.
@@ -63,10 +64,11 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
             b = data.x[:, 0].squeeze().to(torch.float64).to(device)
             solution = data.s.squeeze().to(torch.float64).to(device) if hasattr(data, "s") else None
             
-            
+            # Start the solver
             start_solver = time_function()
             solver_settings = {"max_iter": 2 * data.num_nodes, "x0": None, "rtol": test_results.target}
-            
+
+            # Use the preconditioner if it's not the baseline method
             res, final_x = [], None
             if breakdown:
                 print(f"  -> WARNING: Preconditioner breakdown on sample {sample}.")
@@ -76,10 +78,10 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
                 res, final_x = preconditioned_conjugate_gradient(A, b, M=prec, x_true=solution, **solver_settings)
             
             solver_time = time_function() - start_solver
-
+            # Log the results
             iterations = len(res) - 1 if res else -1
             print(f"  [Sample {sample+1}/{len(test_loader.dataset)}] Solved in {solver_time:.2f}s with {iterations} iterations.")
-            
+            # Log the results to the test results object
             if res:
                 A_norm_sq = np.array([r[0].item() for r in res])
                 rel_res_sq = np.array([r[1].item() for r in res])
@@ -94,7 +96,8 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
         if save_results: test_results.save_results()
         test_results.print_summary()
 
-
+# This function is used to warm up the model by running a dummy forward pass.
+# This is useful to ensure that the model is ready for inference.
 def warmup(model, device):
     if model is None: return
     model.to(device)
@@ -106,7 +109,7 @@ def warmup(model, device):
     ).to(device)
     _ = model(data)
     print("Model warmup done...")
-
+# This function parses command line arguments for the script.
 def argparser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", type=str, default=None, help="A name for the test run folder.")
@@ -121,7 +124,7 @@ def argparser():
     parser.add_argument("--drop_tol", type=float, default=1e-6, 
                         help="Tolerance for dropping small values from the learned preconditioner.")
     return parser.parse_args()
-
+# This function generates a synthetic sparse SPD matrix with a target density. 
 def main():
     args = argparser()
     

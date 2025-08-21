@@ -123,7 +123,7 @@ class LearnedPreconditioner(Preconditioner):
         if self.L_scipy is not None:
             return self.L_scipy.nnz + self.U_scipy.nnz
         return 0
-    # This method solves the linear system L * y = b using SciPy's triangular solver.
+    # This method solves the linear system using SciPy's triangular solver.
     def solve(self, b: torch.Tensor) -> torch.Tensor:
         # Correctly moves input 'b' to CPU for SciPy
         b_np = b.cpu().numpy()
