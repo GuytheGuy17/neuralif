@@ -21,7 +21,7 @@ A synthetic dataset is provided in the folder `apps`.
 
 ## References
 
-If our code helps your research or work, please consider citing our paper. The following are BibTeX references:
+These are the BibTeX references for the Incomplete Factorization paper:
 
 ```
 @article{hausner2024neural,
@@ -45,7 +45,3 @@ If our code helps your research or work, please consider citing our paper. The f
 }
 
 ```
-
-Please feel free to reach out if you have any questions or comments.
-
-Contact: Paul Häusner, paul.hausner@it.uu.se
