@@ -54,32 +54,23 @@ class FolderDataset(Dataset):
 def get_dataloader(dataset_path, batch_size, mode="train", add_fill_in=False, fill_in_k=0):
     """
     Creates a DataLoader for the specified dataset split.
-
-    If 'add_fill_in' is True, it will prioritize loading from a pre-processed 
-    directory to avoid expensive on-the-fly transformations. If the processed
-    directory does not exist, it falls back to real-time transformation.
+    If 'add_fill_in' is True, it loads from a pre-processed directory.
+    Otherwise, it loads from the raw directory.
     """
-    # --- START OF PRE-PROCESSING MODIFICATION ---
-    # Prioritize loading pre-processed data if it exists and fill-in is requested
-    processed_folder_path = os.path.join(dataset_path, "processed", mode)
-    
-    # Check if we should use the pre-processed data
-    use_preprocessed = add_fill_in and os.path.isdir(processed_folder_path)
-
-    if use_preprocessed:
-        folder_path = processed_folder_path
-        transform = None # The transform has already been applied
-        print(f"INFO: Loading PRE-PROCESSED data for '{mode}' split.")
+    transform = None
+    if add_fill_in:
+        # For fill-in models, we expect data to be pre-processed.
+        folder_path = os.path.join(dataset_path, "processed", mode)
+        print(f"INFO: Loading PRE-PROCESSED data for '{mode}' split for fill-in model.")
     else:
-        # Fallback to original behavior: on-the-fly transform or no transform
+        # For the baseline model (K=0), we load directly from the raw data.
+        # The model itself is robust and will add the necessary placeholder feature.
         folder_path = os.path.join(dataset_path, mode)
-        transform = AddHeuristicFillIn(K=fill_in_k) if add_fill_in else None
-    # --- END OF PRE-PROCESSING MODIFICATION ---
+        print(f"INFO: Loading RAW data for '{mode}' split for baseline (K=0) model.")
 
     if not os.path.isdir(folder_path):
         raise FileNotFoundError(f"CRITICAL: No '{mode}' directory found in the expected path: {folder_path}")
 
-    # Create the dataset from the selected folder with the appropriate transform
     dataset = FolderDataset(folder_path=folder_path, transform=transform)
 
     if len(dataset) == 0:
@@ -87,8 +78,5 @@ def get_dataloader(dataset_path, batch_size, mode="train", add_fill_in=False, fi
     
     print(f"Successfully created a '{mode}' dataloader.")
     print(f" -> Loading {len(dataset)} samples from: {os.path.abspath(folder_path)}")
-    if transform:
-        print(f" -> Applying ON-THE-FLY transform: {transform}")
 
-    # Set num_workers=0 for robust performance in Colab and to avoid issues with some transforms
     return DataLoader(dataset, batch_size=batch_size, shuffle=(mode == "train"), num_workers=0)

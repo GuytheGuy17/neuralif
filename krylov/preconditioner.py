@@ -85,8 +85,6 @@ class ScipyILU(Preconditioner):
         return torch.from_numpy(x_np).to(b.device, b.dtype)
     
 
-# In krylov/preconditioner.py
-
 class RobustScipyIC(Preconditioner):
     """
     A robust Incomplete Cholesky (IC(0)) preconditioner using only SciPy.
@@ -132,8 +130,7 @@ class RobustScipyIC(Preconditioner):
         
         b_np = b.cpu().numpy()
         
-        # --- THIS IS THE CRITICAL FIX ---
-        # We manually perform the LL^T solve using the L factor from ILU.
+        
         # This enforces the symmetric positive-definite structure of IC.
         
         # 1. Access the L factor (it's a SuperLU object, but supports triangular solve)
