@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import scipy.sparse
 import scipy.sparse.linalg
+import pyamg 
 
 from neuralif.utils import torch_sparse_to_scipy, time_function
 
@@ -80,6 +81,48 @@ class ScipyILU(Preconditioner):
         x_np = self.ilu_op.solve(b_np)
         # Correctly returns tensor to original device
         return torch.from_numpy(x_np).to(b.device, b.dtype)
+    
+
+class PyamgIC(Preconditioner):
+    """
+    An Incomplete Cholesky (IC) preconditioner using the 'pyamg' library.
+    This is an easy-to-install and robust baseline for SPD matrices.
+    """
+    def __init__(self, A_torch: torch.Tensor):
+        super().__init__()
+        start_time = time_function()
+        
+        # pyamg expects a SciPy CSR matrix on the CPU
+        A_scipy_csr = torch_sparse_to_scipy(A_torch.cpu()).tocsr()
+        
+        try:
+            # Create the IC preconditioner object using pyamg's standalone routine
+            self.M = pyamg.cholesky_incomplete(A_scipy_csr, level=0)
+            self._nnz = self.M.nnz
+        except Exception as e:
+            self.breakdown = True
+            self.breakdown_reason = str(e)
+            self.M = None
+            self._nnz = 0
+            print(f"\nWARNING: pyamg IC factorization failed: {e}")
+            
+        self.time = time_function() - start_time
+
+    @property
+    def nnz(self):
+        # Reports the NNZ of the lower triangular factor L.
+        return self._nnz
+
+    def solve(self, b: torch.Tensor) -> torch.Tensor:
+        if self.breakdown:
+            return b
+        
+        # The pyamg object can be called directly as a solver
+        b_np = b.cpu().numpy()
+        x_np = self.M(b_np)
+        
+        # Return the solution tensor on the original device
+        return torch.from_numpy(x_np).to(b.device, b.dtype)
 
 # This is a learned preconditioner that uses a neural network model to compute the preconditioner.
 class LearnedPreconditioner(Preconditioner):
@@ -148,6 +191,6 @@ def get_preconditioner(data, A_torch_cpu, method: str, model=None, device='cpu',
         return Jacobi(A_torch_cpu)
     elif method == "ic":
         # The constructor correctly uses the CPU tensor A_torch_cpu
-        return ScipyILU(A_torch_cpu)
+        return PyamgIC(A_torch_cpu)
     else:
         raise NotImplementedError(f"Preconditioner method '{method}' not implemented!")
