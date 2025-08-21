@@ -88,14 +88,15 @@ class MP_Block(nn.Module):
     def __init__(self, skip_connections, first, last, edge_features, node_features, global_features, hidden_size, activation, aggregate):
         super().__init__()
         aggr_list = aggregate if isinstance(aggregate, list) and len(aggregate) == 2 else [aggregate, aggregate]
-        
-        # --- START OF MODIFICATION ---
-        # The input edge feature dimension is now 2 (value + is_fill_in flag) if it's the first layer.
+   
+        # The first layer has no skip connections, so it only uses the node features.
+        # The second layer uses the edge features from the first layer.
         # For subsequent layers, it's the hidden dimension + the original 2 features for the skip connection.
         edge_feat_in = 2 if first else edge_features + (2 if skip_connections else 0)
         # The output is just the value, so it's 1-dimensional if it's the last layer.
         edge_feat_out = 1 if last else edge_features
-        # --- END OF MODIFICATION ---
+        # Initialize the GraphNet layers with the specified parameters.
+        # The first layer uses the node features, the second layer uses the edge features.
         
         self.l1 = GraphNet(
             node_features=node_features, edge_features=edge_feat_in, global_features=global_features,
@@ -107,13 +108,22 @@ class MP_Block(nn.Module):
             hidden_size=hidden_size, aggregate=aggr_list[1], activation=activation,
             edge_features_out=edge_feat_out
         )
-    
+    # This method is called to perform a forward pass through the block.
+    # It processes the node and edge features through the two GraphNet layers.
     def forward(self, node_embedding, edge_index, edge_embedding, global_features):
         edge_embedding, node_embedding, _ = self.l1(node_embedding, edge_index, edge_embedding, g=global_features)
         edge_index_T = torch.stack([edge_index[1], edge_index[0]], dim=0)
         edge_embedding, node_embedding, _ = self.l2(node_embedding, edge_index_T, edge_embedding, g=global_features)
         return edge_embedding, node_embedding, global_features
 
+
+# This class defines the NeuralIF model, which is a neural network for solving linear systems.
+# It uses message passing and can handle edge features.
+# The model can be configured with various parameters such as the number of message passing steps,
+# whether to use skip connections, and the activation function.
+# The model outputs a lower triangular matrix L and its transpose U, which are used to solve
+# linear systems efficiently.
+# The model can also augment node features and use two-hop neighborhoods.
 class NeuralIF(nn.Module):
     def __init__(self, **kwargs):
         super().__init__()
@@ -132,6 +142,8 @@ class NeuralIF(nn.Module):
                 skip_connections=self.skip_connections
             ))
 
+        # The final output is a lower triangular matrix L and its transpose U
+        # The edge features are transformed to ensure they are positive and non-zero.
     def forward(self, data):
         if self.augment_node_features: data = augment_features(data)
         if self.use_two_hop: data = TwoHop()(data)
@@ -149,20 +161,24 @@ class NeuralIF(nn.Module):
             
         return self._transform_output(node_embedding, edge_index, edge_embedding)
 
+    # This method transforms the output of the model to create the lower triangular matrix L.
+    # It ensures that the diagonal entries are positive and non-zero by applying a softplus function   
     def _transform_output(self, x, edge_index, edge_values):
         diag_mask = edge_index[0] == edge_index[1]
         softplus_result = torch.nn.functional.softplus(edge_values[diag_mask].squeeze(-1)) + 1e-6
         edge_values[diag_mask] = softplus_result.unsqueeze(-1)
         
+        # Ensure edge_values is 1D for the sparse matrix construction
         edge_values_squeezed = edge_values.squeeze(-1)
         L = torch.sparse_coo_tensor(
             edge_index, edge_values_squeezed, 
             size=(x.size(0), x.size(0)), device=x.device
         ).coalesce()
-
+        # Ensure the diagonal is positive and non-zero
         off_diagonal_values = edge_values_squeezed[~diag_mask]
         l1_penalty = torch.mean(torch.abs(off_diagonal_values))
-
+        
+        # Create the upper triangular matrix U by flipping the indices of L
         U = torch.sparse_coo_tensor(L.indices().flip(0), L.values(), L.shape).coalesce()
         
         # Package L and U into a tuple. This becomes the primary output.
