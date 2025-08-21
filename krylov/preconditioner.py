@@ -4,7 +4,7 @@ import scipy.sparse
 import scipy.sparse.linalg
 
 from neuralif.utils import torch_sparse_to_scipy, time_function
-
+# This is a base class for preconditioners used in Krylov methods.
 class Preconditioner:
     def __init__(self):
         self.time = 0.0
@@ -18,7 +18,7 @@ class Preconditioner:
         return 0
     def solve(self, b: torch.Tensor) -> torch.Tensor:
         return b
-
+# This is a Jacobi preconditioner that uses the inverse of the diagonal of the matrix A.
 class Jacobi(Preconditioner):
     def __init__(self, A_torch: torch.Tensor):
         super().__init__()
@@ -27,18 +27,20 @@ class Jacobi(Preconditioner):
         A_cpu = A_torch.to('cpu').coalesce()
         indices = A_cpu.indices()
         values = A_cpu.values()
-        diag_mask = indices[0] == indices[1]
-        diag_indices = indices[0][diag_mask]
+        diag_mask = indices[0] == indices[1] # Mask for diagonal elements
+        diag_indices = indices[0][diag_mask] # Indices of diagonal elements
+        # Extract the diagonal values
         diag_values = values[diag_mask]
-        n = A_cpu.shape[0]
+        n = A_cpu.shape[0] # Number of nodes
+        # Create a full diagonal tensor
         full_diag = torch.zeros(n, device='cpu', dtype=A_cpu.dtype)
-        full_diag.scatter_(0, diag_indices, diag_values)
-        self.inv_diag = 1.0 / (full_diag + 1e-12)
-        self.time = time_function() - start
-        self._nnz = n
+        full_diag.scatter_(0, diag_indices, diag_values) # Fill the diagonal
+        self.inv_diag = 1.0 / (full_diag + 1e-12) # Small epsilon to avoid division by zero
+        self.time = time_function() - start # Store the time taken for initialisation
+        self._nnz = n # Number of non-zero elements in the diagonal
     @property
     def nnz(self):
-        return self._nnz
+        return self._nnz # Number of non-zero elements in the diagonal
     
    
     # The method must operate on the input vector 'b' 
@@ -78,16 +80,18 @@ class ScipyILU(Preconditioner):
         # Correctly returns tensor to original device
         return torch.from_numpy(x_np).to(b.device, b.dtype)
 
+# This is a learned preconditioner that uses a neural network model to compute the preconditioner.
 class LearnedPreconditioner(Preconditioner):
     def __init__(self, data_on_device, model, drop_tol=1e-6):
         super().__init__()
-        self.model = model
-        self.drop_tol = drop_tol
-        start = time_function()
+        self.model = model # The model is expected to be a PyTorch model
+        self.drop_tol = drop_tol # Drop tolerance for the preconditioner
+        start = time_function() # Start timing the preconditioner computation
         self._compute_preconditioner(data_on_device)
-        self.time = time_function() - start
-
-    def _compute_preconditioner(self, data_on_device):
+        self.time = time_function() - start # Store the time taken for preconditioner computation
+    # This method computes the preconditioner using the model.
+    # It expects the model to output a lower triangular matrix L.
+    def _compute_preconditioner(self, data_on_device): 
         self.model.eval()
         with torch.no_grad():
             L_torch, _, _ = self.model(data_on_device)
