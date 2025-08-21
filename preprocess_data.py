@@ -10,7 +10,7 @@ def main(args):
     Applies the AddHeuristicFillIn transform to a raw dataset and saves
     the processed graphs to a new directory.
     """
-    # Path to the original (raw) data
+    # Path to the original raw dataset
     raw_path = os.path.join(args.dataset_path, "raw")
     # Path where the new, processed graphs will be saved
     processed_path = os.path.join(args.dataset_path, "processed")
