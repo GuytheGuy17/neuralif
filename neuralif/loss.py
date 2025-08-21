@@ -49,13 +49,17 @@ def pcg_proxy(L_mat, U_mat, A, cg_steps: int = 3, preconditioner_solve_steps: in
     r = b.clone()
     r0_norm = torch.linalg.vector_norm(r) + eps
 
+    # Solve L * y = r
     y = iterative_triangular_solve(L_mat, r.squeeze(), iterations=preconditioner_solve_steps)
+    # Solve U * z = y
     z = iterative_triangular_solve(U_mat, y.squeeze(), iterations=preconditioner_solve_steps)
 
+    # Initial search direction
     p = z.clone()
     residuals = []
     rz_old = (r * z).sum()
 
+    # Main loop for the conjugate gradient method
     for i in range(cg_steps):
         Ap = A @ p
         pAp = (p * Ap).sum()
@@ -96,12 +100,15 @@ def sketched_loss(L, A, normalized=False):
 def improved_sketch_with_pcg(L, A, **kwargs):
     """Computes a hybrid loss where BOTH components are normalized."""
     L_mat, U_mat = (L, L.t()) if not isinstance(L, tuple) else L
+    # Compute the sketched loss
     sketch_loss_val = sketched_loss((L_mat, U_mat), A, normalized=True)
+    # Compute the PCG proxy loss
     proxy_loss_val = pcg_proxy(
         L_mat.coalesce(), U_mat.coalesce(), A, 
         cg_steps=kwargs.get('pcg_steps', 3),
         preconditioner_solve_steps=kwargs.get('preconditioner_solve_steps', 5)
     )
+    # Return the combined loss
     return sketch_loss_val + kwargs.get('pcg_weight', 0.1) * proxy_loss_val
 
 #  This function computes the loss based on the model output and the data.
@@ -123,6 +130,7 @@ def loss(output, data, config=None, **kwargs):
         edge_index_A = data.edge_index
         edge_attr_A = data.edge_attr.squeeze()
 
+    # Create the COO tensor for A on the target device
     A = torch.sparse_coo_tensor(
         edge_index_A,
         edge_attr_A,

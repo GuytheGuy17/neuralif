@@ -10,6 +10,8 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from apps.preprocess import AddHeuristicFillIn
 
+# This function converts a SciPy sparse matrix and a NumPy vector into a PyTorch Geometric Data object.
+# It uses float32 for memory efficiency and ensures compatibility with PyTorch Geometric.
 def matrix_to_graph(A, b):
     """
     Converts a SciPy sparse matrix and a NumPy vector into a PyTorch Geometric
@@ -21,6 +23,8 @@ def matrix_to_graph(A, b):
     x = torch.tensor(b, dtype=torch.float32).unsqueeze(1)
     return Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
 
+# This function converts a PyTorch Geometric Data object back to a sparse matrix and a vector.
+# It extracts the edge attributes and node features, ensuring they are in the correct format.'
 def graph_to_matrix(data):
     """
     Converts a PyTorch Geometric Data object back to a PyTorch sparse tensor.
@@ -51,6 +55,8 @@ class FolderDataset(Dataset):
         data = torch.load(os.path.join(self.folder_path, self.files[idx]), weights_only=False)
         return data
 
+# This function creates a DataLoader for the specified dataset split.
+# If 'add_fill_in' is True, it loads from a pre-processed directory.
 def get_dataloader(dataset_path, batch_size, mode="train", add_fill_in=False, fill_in_k=0):
     """
     Creates a DataLoader for the specified dataset split.

@@ -59,6 +59,7 @@ def conjugate_gradient(A, b, x0=None, x_true=None, rtol=1e-6, max_iter=None):
         
     return errors, x_hat
 
+# This function implements the preconditioned conjugate gradient method.
 
 def preconditioned_conjugate_gradient(A, b, M, x0=None, x_true=None, rtol=1e-6, max_iter=None):
     """

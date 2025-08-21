@@ -51,10 +51,9 @@ def test(model, test_loader, device, folder, save_results=False, dataset="random
                 (data.num_nodes, data.num_nodes),
                 dtype=torch.float64
             )
-            A_csr_cpu = A_coo_cpu.to_sparse_csr()
-            # Move data to the target device
+            A_csr_cpu = A_coo_cpu.to_sparse_csr() # Move data to the target device
            
-            # The preconditioner is ALWAYS created on the CPU using CPU data.
+            # The preconditioner is always created on the CPU using CPU data.
             # This is crucial for Jacobi
             prec = get_preconditioner(data, A_coo_cpu, method, model=model, device=device, drop_tol=drop_tol)
             p_time, breakdown, nnzL = prec.time, prec.breakdown, prec.nnz
@@ -124,6 +123,7 @@ def argparser():
     parser.add_argument("--drop_tol", type=float, default=1e-6, 
                         help="Tolerance for dropping small values from the learned preconditioner.")
     return parser.parse_args()
+
 # This function generates a synthetic sparse SPD matrix with a target density. 
 def main():
     args = argparser()
@@ -141,6 +141,7 @@ def main():
     
     print(f"\nUsing device: {test_device}")
     
+    # Load the model if specified
     model = None
     training_config = {}
     if args.model.lower() == "neuralif":

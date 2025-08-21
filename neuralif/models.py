@@ -5,8 +5,8 @@ from torch_geometric.nn import aggr
 
 from neuralif.utils import TwoHop
 
-# Helper classes (ToLowerTriangular, augment_features, MLP, GraphNet) are unchanged
-
+# This class transforms the edge indices to ensure they represent a lower triangular matrix.
+# It modifies the edge indices and attributes to maintain the lower triangular structure.
 class ToLowerTriangular(torch_geometric.transforms.BaseTransform):
     def __call__(self, data):
         edge_index, edge_attr = data.edge_index, data.edge_attr
@@ -17,6 +17,8 @@ class ToLowerTriangular(torch_geometric.transforms.BaseTransform):
         data.edge_attr = edge_attr[mask]
         return data
 
+# This function computes the loss based on the model output and the data.
+# It handles both the sketched loss and the improved sketch with PCG loss.
 def augment_features(data):
     # This function needs to be aware of the 2D edge features
     if data.edge_attr.dim() == 1: data.edge_attr = data.edge_attr.unsqueeze(-1)
@@ -43,12 +45,14 @@ def augment_features(data):
     data.x = torch.cat([data.x, dominance_feat, decay_feat], dim=1)
     return data
 
+## This class defines a Multi-Layer Perceptron (MLP) 
 class MLP(nn.Module):
     def __init__(self, width, layer_norm=False, activation="relu", activate_final=False):
         super().__init__()
-        # ... (implementation is unchanged)
         width = list(filter(lambda x: x > 0, width))
         if not width or len(width) < 2: self.net = nn.Identity(); return
+        ## Create a sequence of linear layers with the specified activation function.
+        ## The last layer can be activated or not based on the 'activate_final' flag.
         lls = nn.ModuleList()
         for k in range(len(width)-1):
             lls.append(nn.Linear(width[k], width[k+1], bias=True))
@@ -58,21 +62,31 @@ class MLP(nn.Module):
                 else: raise NotImplementedError(f"Activation '{activation}' not supported")
         if layer_norm: lls.append(nn.LayerNorm(width[-1]))
         self.net = nn.Sequential(*lls)
+
+        ## This method performs the forward pass through the MLP.
+    # It applies the sequence of linear layers and activation functions.
     def forward(self, x): return self.net(x)
     
+# This class defines a GraphNet layer that processes node and edge features.
+# It aggregates edge features and updates node embeddings based on the specified aggregation method.
 class GraphNet(nn.Module):
     def __init__(self, node_features, edge_features, global_features, hidden_size,
                  aggregate, activation, edge_features_out):
         super().__init__()
-        # ... (implementation is unchanged)
+        ## The aggregation method is chosen based on the provided string.
         if aggregate == "sum": self.aggregate = aggr.SumAggregation()
         elif aggregate == "mean": self.aggregate = aggr.MeanAggregation()
         elif aggregate == "max": self.aggregate = aggr.MaxAggregation()
         else: raise NotImplementedError(f"Aggregation '{aggregate}' not implemented")
         edge_input_dim = edge_features + (2 * node_features) + global_features
         node_input_dim = node_features + edge_features_out + global_features
+        # The edge block processes the edge features and the node features.
+        # The node block processes the node features and the aggregated edge features.
         self.edge_block = MLP([edge_input_dim, hidden_size, edge_features_out], activation=activation)
         self.node_block = MLP([node_input_dim, hidden_size, node_features], activation=activation)
+    
+    # This method performs the forward pass through the GraphNet layers.
+    # It processes the edge and node features, aggregates them, and returns the updated embeddings.
     def forward(self, x, edge_index, edge_attr, g=None):
         row, col = edge_index
         if g is not None: edge_inputs = torch.cat([g.expand(x[row].shape[0], -1), x[row], x[col], edge_attr], dim=1)
@@ -84,6 +98,8 @@ class GraphNet(nn.Module):
         node_embeddings = self.node_block(node_inputs)
         return edge_embedding, node_embeddings, None
 
+# This class defines a block of message passing layers for the NeuralIF model.
+# It handles skip connections and the transformation of edge features.
 class MP_Block(nn.Module):
     def __init__(self, skip_connections, first, last, edge_features, node_features, global_features, hidden_size, activation, aggregate):
         super().__init__()

@@ -55,7 +55,8 @@ class Jacobi(Preconditioner):
         inv_diag_on_device = self.inv_diag.to(b.device, b.dtype)
         return inv_diag_on_device * b
     
-
+# This is an Incomplete Cholesky (IC(0)) preconditioner using the 'ilupp' library.
+# It is designed to be robust and efficient, with explicit data type enforcement.
 class IluppIC(Preconditioner):
     """
     This is the definitive, high-performance Incomplete Cholesky (IC(0))

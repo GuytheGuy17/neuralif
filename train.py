@@ -23,20 +23,20 @@ def main(config):
         json.dump(config, f, indent=4)
     print(f"Results will be saved to: {os.path.abspath(folder)}")
     
-    torch_geometric.seed_everything(config["seed"])
+    torch_geometric.seed_everything(config["seed"]) # Set the random seed for reproducibility
     
     model_arg_keys = [
         "latent_size", "message_passing_steps", "skip_connections", "augment_nodes",
         "activation", "aggregate", "two_hop", "edge_features"
     ]
-    model_args = {k: v for k, v in config.items() if k in model_arg_keys and v is not None}
+    model_args = {k: v for k, v in config.items() if k in model_arg_keys and v is not None} 
     
     # Model is created in float32 by default
     model = NeuralIF(**model_args)
     model.to(device)
 
     print(f"\nNumber of parameters in model: {count_parameters(model)}\n")
-    # Initialize the optimizer
+    # Initialise the optimiser
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["learning_rate"])
     # Load the model if a checkpoint is provided
     train_loader = get_dataloader(
