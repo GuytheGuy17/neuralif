@@ -5,7 +5,8 @@ from torch_geometric.utils import degree
 
 warnings.filterwarnings('ignore', '.*Sparse CSR tensor support is in beta state.*')
 
-
+# This function computes the degree of each node in the graph.
+# It returns a tensor of degrees, which is useful for various graph algorithms.
 def iterative_triangular_solve(A_sparse, b_vec, iterations=5):
     """
     Approximates the solution to A*x = b using a few steps of a simple iterative solver.
@@ -32,7 +33,8 @@ def iterative_triangular_solve(A_sparse, b_vec, iterations=5):
         
     return x.unsqueeze(-1)
 
-
+# This function implements a proxy for the preconditioned conjugate gradient method.
+# It uses a fast iterative triangular solve to approximate the solution.
 def pcg_proxy(L_mat, U_mat, A, cg_steps: int = 3, preconditioner_solve_steps: int = 5):
     """
     A robust and differentiable PCG proxy that uses the fast iterative triangular solve.
@@ -75,6 +77,8 @@ def pcg_proxy(L_mat, U_mat, A, cg_steps: int = 3, preconditioner_solve_steps: in
 
     return torch.stack(residuals).mean()
 
+# This function computes the structural loss based on the Frobenius norm approximation.
+# It uses a random vector to approximate the loss, which is differentiable.
 
 def sketched_loss(L, A, normalized=False):
     """Computes the structural loss based on the Frobenius norm approximation."""
@@ -87,7 +91,8 @@ def sketched_loss(L, A, normalized=False):
         norm = norm / (a_norm + torch.finfo(a_norm.dtype).eps)
     return norm
 
-
+# This function computes a hybrid loss that combines the sketched loss and the PCG proxy loss.
+# It is designed to be differentiable and uses the preconditioned conjugate gradient method.
 def improved_sketch_with_pcg(L, A, **kwargs):
     """Computes a hybrid loss where BOTH components are normalized."""
     L_mat, U_mat = (L, L.t()) if not isinstance(L, tuple) else L
@@ -99,7 +104,8 @@ def improved_sketch_with_pcg(L, A, **kwargs):
     )
     return sketch_loss_val + kwargs.get('pcg_weight', 0.1) * proxy_loss_val
 
-
+#  This function computes the loss based on the model output and the data.
+# It handles both the sketched loss and the improved sketch with PCG loss.
 def loss(output, data, config=None, **kwargs):
     """Computes the loss on the same device as the model output."""
     device = output.device if not isinstance(output, tuple) else output[0].device
