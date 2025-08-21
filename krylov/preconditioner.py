@@ -89,24 +89,23 @@ class ScipyILU(Preconditioner):
 # It is an easy-to-install and robust baseline for SPD matrices.
 class PyamgIC(Preconditioner):
     """
-    An Incomplete Cholesky (IC) preconditioner using the 'pyamg' library.
-    This is an easy-to-install and robust baseline for SPD matrices.
+    A corrected Incomplete Cholesky (IC) preconditioner using the 'pyamg' library.
+    This version correctly performs the two-step triangular solve.
     """
     def __init__(self, A_torch: torch.Tensor):
         super().__init__()
         start_time = time_function()
         
-        # pyamg expects a SciPy CSR matrix on the CPU
         A_scipy_csr = torch_sparse_to_scipy(A_torch.cpu()).tocsr()
         
         try:
-            # Create the IC preconditioner object using pyamg's standalone routine
-            self.M = pyamg.cholesky_incomplete(A_scipy_csr, level=0)
-            self._nnz = self.M.nnz
+            # This function returns the sparse lower-triangular factor L
+            self.L_factor = pyamg.cholesky_incomplete(A_scipy_csr, level=0)
+            self._nnz = self.L_factor.nnz
         except Exception as e:
             self.breakdown = True
             self.breakdown_reason = str(e)
-            self.M = None
+            self.L_factor = None
             self._nnz = 0
             print(f"\nWARNING: pyamg IC factorization failed: {e}")
             
@@ -114,18 +113,21 @@ class PyamgIC(Preconditioner):
 
     @property
     def nnz(self):
-        # Reports the NNZ of the lower triangular factor L.
         return self._nnz
 
     def solve(self, b: torch.Tensor) -> torch.Tensor:
-        if self.breakdown:
+        if self.breakdown or self.L_factor is None:
             return b
         
-        # The pyamg object can be called directly as a solver
         b_np = b.cpu().numpy()
-        x_np = self.M(b_np)
         
-        # Return the solution tensor on the original device
+        
+        # Forward substitution (solve Ly = b)
+        y = scipy.sparse.linalg.spsolve_triangular(self.L_factor, b_np, lower=True)
+        
+        # Backward substitution (solve L^T x = y)
+        x_np = scipy.sparse.linalg.spsolve_triangular(self.L_factor.T, y, lower=False)
+        
         return torch.from_numpy(x_np).to(b.device, b.dtype)
 
 # This is a learned preconditioner that uses a neural network model to compute the preconditioner.
