@@ -121,27 +121,32 @@ class ScipyIC_Final_Corrected(Preconditioner):
         return torch.from_numpy(z).to(b.device, b.dtype)
     
 
+# In krylov/preconditioner.py
+
 class IluppIC(Preconditioner):
     """
     This is the definitive, high-performance Incomplete Cholesky (IC(0))
     preconditioner using the 'ilupp' library.
 
-    This library is purpose-built for robust factorizations and is used in the
-    original NeuralIF paper. It will either produce a high-quality factorization
-    or raise a clear error, avoiding the silent failures of other libraries.
+    This version includes explicit data type enforcement to ensure compatibility
+    with the float64 solver, and a sanity check to guard against silent failures.
     """
     def __init__(self, A_torch: torch.Tensor):
         super().__init__()
         start_time = time_function()
         
-        # ilupp expects a SciPy CSR matrix on the CPU with float64 precision.
+        # Ensure the input matrix for factorization is CPU-based CSR with float64 precision.
         A_scipy_csr = torch_sparse_to_scipy(A_torch.cpu().to(torch.float64)).tocsr()
         
         try:
-            # Create the IC preconditioner. `ilupp` handles all the complexity internally.
-            # 'level_of_fill=0' specifies a strict IC(0) factorization.
             self.preconditioner = ilupp.Preconditioner(A_scipy_csr, algorithm='ic', level_of_fill=0)
             self._nnz = self.preconditioner.nnz
+
+            # Sanity Check: If ilupp produces a trivial factor (e.g., identity), it's a silent failure.
+            # nnz should be significantly greater than the matrix dimension.
+            if self._nnz <= A_scipy_csr.shape[0]:
+                 raise RuntimeError(f"ilupp produced a trivial factor with only {self._nnz} non-zeros. This indicates a silent factorization failure.")
+
         except Exception as e:
             self.breakdown = True
             self.breakdown_reason = str(e)
@@ -157,13 +162,29 @@ class IluppIC(Preconditioner):
 
     def solve(self, b: torch.Tensor) -> torch.Tensor:
         if self.breakdown or self.preconditioner is None:
+            # If preconditioner failed, return the original vector (identity preconditioning).
             return b
         
-        # The ilupp object's `solve` method correctly and efficiently applies (L L^T)^-1
-        b_np = b.cpu().numpy().astype(np.float64)
-        x_np = self.preconditioner.solve(b_np)
+        # --- START OF DEFINITIVE FIX ---
         
-        return torch.from_numpy(x_np).to(b.device, b.dtype)
+        # 1. Ensure input to ilupp is a numpy float64 array on the CPU.
+        b_np_f64 = b.cpu().numpy().astype(np.float64, copy=False)
+        
+        # 2. Apply the preconditioner.
+        x_np_f64 = self.preconditioner.solve(b_np_f64)
+        
+        # 3. Convert back to a PyTorch tensor, explicitly setting the dtype to float64.
+        #    Then, move it to the original device of the input vector 'b'.
+        x_torch_f64 = torch.from_numpy(x_np_f64).to(dtype=torch.float64)
+        
+        # 4. Final sanity check: if the output is all zeros, something is wrong.
+        #    Return the original vector instead to prevent the solver from stalling.
+        if not torch.any(x_torch_f64):
+            print("\nWARNING: IluppIC solve returned a zero vector. Falling back to identity.")
+            return b
+
+        return x_torch_f64.to(b.device)
+        # --- END OF DEFINITIVE FIX ---
 
 # This is a learned preconditioner that uses a neural network model to compute the preconditioner.
 class LearnedPreconditioner(Preconditioner):
