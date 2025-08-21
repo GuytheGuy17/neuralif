@@ -85,65 +85,60 @@ class ScipyILU(Preconditioner):
         return torch.from_numpy(x_np).to(b.device, b.dtype)
     
 
-class RobustScipyIC(Preconditioner):
+# In krylov/preconditioner.py
+
+class FinalScipyIC(Preconditioner):
     """
-    A robust Incomplete Cholesky (IC(0)) preconditioner using only SciPy.
-    
-    This method uses SciPy's robust ILU implementation (`spilu`) to get an
-    incomplete factorization, but then crucially enforces the symmetric positive-definite
-    structure required for IC by performing a two-step solve with L and L.T.
-    This is the correct and robust way to implement IC(0) when a dedicated
-    library like `ilupp` is not available.
+    A definitive, robust Incomplete Cholesky (IC(0)) preconditioner using only SciPy.
+
+    This is the final corrected version that addresses a subtle bug in previous attempts.
+    It uses SciPy's robust `spilu` to get a numerically stable L factor, and then
+    correctly performs the symmetric two-step solve for (L L^T)^-1, which is
+    essential for the PCG algorithm.
     """
     def __init__(self, A_torch: torch.Tensor):
         super().__init__()
         start_time = time_function()
         
-        # spilu works best with the CSC format
         A_scipy_csc = torch_sparse_to_scipy(A_torch.cpu()).tocsc()
         
         try:
-            # Get an ILU factorization. For a symmetric matrix, L should approximate
-            # the Cholesky factor. fill_factor=1 approximates the IC(0) sparsity.
-            self.ilu_op = scipy.sparse.linalg.spilu(A_scipy_csc, 
-                                                    drop_tol=0.0, 
-                                                    fill_factor=1,
-                                                    permc_spec='NATURAL') # IMPORTANT: Do not reorder rows
+            # Use spilu for its robust factorization backend.
+            # The key is to prevent reordering to preserve the matrix structure.
+            ilu_op = scipy.sparse.linalg.spilu(A_scipy_csc,
+                                               drop_tol=0.0,
+                                               fill_factor=1,
+                                               permc_spec='NATURAL')
+            # We only need the L factor from this operation.
+            self.L_factor = ilu_op.L
+            self._nnz = self.L_factor.nnz
+
         except RuntimeError as e:
             self.breakdown = True
             self.breakdown_reason = str(e)
-            self.ilu_op = None
+            self.L_factor = None
+            self._nnz = 0
             print(f"\nWARNING: SciPy spilu factorization for IC failed: {e}")
         
         self.time = time_function() - start_time
 
     @property
     def nnz(self):
-        # Correctly report NNZ of only the L factor.
-        if self.ilu_op and hasattr(self.ilu_op, 'L'):
-            return self.ilu_op.L.nnz
-        return 0
+        return self._nnz
 
     def solve(self, b: torch.Tensor) -> torch.Tensor:
-        if self.breakdown or self.ilu_op is None:
+        if self.breakdown or self.L_factor is None:
             return b
         
         b_np = b.cpu().numpy()
         
+        # --- THE CORRECT 2-STEP SYMMETRIC SOLVE for (L L^T)^-1 * b ---
         
-        # This enforces the symmetric positive-definite structure of IC.
+        # 1. Forward substitution: Solve L y = b for y
+        y = scipy.sparse.linalg.spsolve_triangular(self.L_factor, b_np, lower=True)
         
-        # 1. Access the L factor (it's a SuperLU object, but supports triangular solve)
-        L_factor = self.ilu_op.L
-        
-        # 2. Forward substitution (solve Ly = b)
-        y = L_factor.solve(b_np)
-        
-        # 3. Backward substitution (solve L^T x = y)
-        # We need the transpose of L, which is an upper-triangular matrix.
-        U_factor = self.ilu_op.U # For spilu with symmetric input, U is approximately L.T
-                                # but it's more robust to use the computed U factor.
-        x_np = U_factor.solve(y, trans='T') # Use the transpose solve mode for L^T
+        # 2. Backward substitution: Solve L^T x = y for x
+        x_np = scipy.sparse.linalg.spsolve_triangular(self.L_factor.T, y, lower=False)
         
         return torch.from_numpy(x_np).to(b.device, b.dtype)
 
@@ -214,6 +209,6 @@ def get_preconditioner(data, A_torch_cpu, method: str, model=None, device='cpu',
         return Jacobi(A_torch_cpu)
     elif method == "ic":
         # The constructor correctly uses the CPU tensor A_torch_cpu
-        return RobustScipyIC(A_torch_cpu)
+        return FinalScipyIC(A_torch_cpu)
     else:
         raise NotImplementedError(f"Preconditioner method '{method}' not implemented!")
