@@ -19,29 +19,4 @@ The `neuralif` module contains the code for the learned preconditioner. The mode
 
 A synthetic dataset is provided in the folder `apps`.
 
-## References
-
-These are the BibTeX references for the Incomplete Factorization paper:
-
-```
-@article{hausner2024neural,
-  title={Neural incomplete factorization: learning preconditioners for the conjugate gradient method},
-  author={Paul H{\"a}usner and Ozan {\"O}ktem and Jens Sj{\"o}lund},
-  journal={Transactions on Machine Learning Research},
-  issn={2835-8856},
-  year={2024},
-  url={https://openreview.net/forum?id=FozLrZ3CI5}
-}
-
-@InProceedings{hausner2025learning,
-  title={Learning incomplete factorization preconditioners for {GMRES}},
-  author={H{\"a}usner, Paul and Nieto Juscafresa, Aleix and Sj{\"o}lund, Jens},
-  booktitle={Proceedings of the 6th Northern Lights Deep Learning Conference (NLDL)},
-  pages={85--99},
-  year={2025},
-  volume={265},
-  series={Proceedings of Machine Learning Research},
-  publisher={PMLR},
-}
-
-```
+The preprocess_data.py script takes your raw dataset of matrices and converts each matrix into a graph representation, calculates all the necessary node features (like degree, diagonal dominance, etc.) for every node in every graph, packages the graph structure, node features, and edge features into a single, optimized file for each matrix and saves these optimised files to a new directory (e.g., data/processed/), which will be the source for the training script. This is needed for the `NeuralIF-K` models.
