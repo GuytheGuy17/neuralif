@@ -54,6 +54,7 @@ def conjugate_gradient(A, b, x0=None, x_true=None, rtol=1e-6, max_iter=None):
     # If x_true is provided, calculate the final error
     if x_true is not None:
         final_err_A_norm_sq = torch.dot(x_hat - x_true, A @ (x_hat - x_true))
+        # A-norm of the error is expensive, so we only compute it at the start and end.
         errors[-1] = (final_err_A_norm_sq, errors[-1][1])
         
     return errors, x_hat

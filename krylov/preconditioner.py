@@ -4,6 +4,7 @@ import scipy.sparse
 import scipy.sparse.linalg
 
 from neuralif.utils import torch_sparse_to_scipy, time_function
+
 # This is a base class for preconditioners used in Krylov methods.
 class Preconditioner:
     def __init__(self):
@@ -122,7 +123,7 @@ class LearnedPreconditioner(Preconditioner):
     @property
     def nnz(self):
         if self.L_scipy is not None:
-            return self.L_scipy.nnz + self.U_scipy.nnz
+            return self.L_scipy.nnz
         return 0
     # This method solves the linear system using SciPy's triangular solver.
     def solve(self, b: torch.Tensor) -> torch.Tensor:
