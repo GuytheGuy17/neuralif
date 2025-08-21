@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import scipy.sparse
 import scipy.sparse.linalg
-import pyamg 
+import ilupp  
 
 from neuralif.utils import torch_sparse_to_scipy, time_function
 
@@ -119,6 +119,51 @@ class ScipyIC_Final_Corrected(Preconditioner):
         z = self.lu_solver.U.T @ scipy.sparse.linalg.spsolve_triangular(self.lu_solver.L.T, y, lower=True)
 
         return torch.from_numpy(z).to(b.device, b.dtype)
+    
+
+class IluppIC(Preconditioner):
+    """
+    This is the definitive, high-performance Incomplete Cholesky (IC(0))
+    preconditioner using the 'ilupp' library.
+
+    This library is purpose-built for robust factorizations and is used in the
+    original NeuralIF paper. It will either produce a high-quality factorization
+    or raise a clear error, avoiding the silent failures of other libraries.
+    """
+    def __init__(self, A_torch: torch.Tensor):
+        super().__init__()
+        start_time = time_function()
+        
+        # ilupp expects a SciPy CSR matrix on the CPU with float64 precision.
+        A_scipy_csr = torch_sparse_to_scipy(A_torch.cpu().to(torch.float64)).tocsr()
+        
+        try:
+            # Create the IC preconditioner. `ilupp` handles all the complexity internally.
+            # 'level_of_fill=0' specifies a strict IC(0) factorization.
+            self.preconditioner = ilupp.Preconditioner(A_scipy_csr, algorithm='ic', level_of_fill=0)
+            self._nnz = self.preconditioner.nnz
+        except Exception as e:
+            self.breakdown = True
+            self.breakdown_reason = str(e)
+            self.preconditioner = None
+            self._nnz = 0
+            print(f"\nCRITICAL WARNING: ilupp IC factorization failed: {e}")
+            
+        self.time = time_function() - start_time
+
+    @property
+    def nnz(self):
+        return self._nnz
+
+    def solve(self, b: torch.Tensor) -> torch.Tensor:
+        if self.breakdown or self.preconditioner is None:
+            return b
+        
+        # The ilupp object's `solve` method correctly and efficiently applies (L L^T)^-1
+        b_np = b.cpu().numpy().astype(np.float64)
+        x_np = self.preconditioner.solve(b_np)
+        
+        return torch.from_numpy(x_np).to(b.device, b.dtype)
 
 # This is a learned preconditioner that uses a neural network model to compute the preconditioner.
 class LearnedPreconditioner(Preconditioner):
@@ -187,6 +232,6 @@ def get_preconditioner(data, A_torch_cpu, method: str, model=None, device='cpu',
         return Jacobi(A_torch_cpu)
     elif method == "ic":
         # The constructor correctly uses the CPU tensor A_torch_cpu
-        return ScipyIC_Final_Corrected(A_torch_cpu)
+        return IluppIC(A_torch_cpu)
     else:
         raise NotImplementedError(f"Preconditioner method '{method}' not implemented!")
