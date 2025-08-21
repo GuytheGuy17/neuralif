@@ -95,17 +95,18 @@ class LearnedPreconditioner(Preconditioner):
         self.model.eval()
         with torch.no_grad():
             L_torch, _, _ = self.model(data_on_device)
-        
+        # Ensure L_torch is a sparse COO tensor
         L_final = L_torch.coalesce()
         mask = L_final.values().abs() > self.drop_tol
+        # Apply the mask to filter out small values
         L_final = torch.sparse_coo_tensor(
             L_final.indices()[:, mask],
             L_final.values()[mask],
             L_final.shape
         ).coalesce()
-        
+        # Convert to CSR format for efficient solving
         self.L_scipy = torch_sparse_to_scipy(L_final.cpu()).tocsc()
-        self.U_scipy = self.L_scipy.T.tocsc()
+        self.U_scipy = self.L_scipy.T.tocsc() # Transpose for upper triangular part
     
     @property
     def nnz(self):
