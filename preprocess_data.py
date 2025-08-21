@@ -1,4 +1,3 @@
-# FILE: preprocess_data.py
 import os
 import argparse
 from tqdm import tqdm
