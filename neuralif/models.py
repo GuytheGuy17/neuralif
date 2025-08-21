@@ -163,8 +163,14 @@ class NeuralIF(nn.Module):
         off_diagonal_values = edge_values_squeezed[~diag_mask]
         l1_penalty = torch.mean(torch.abs(off_diagonal_values))
 
+        U = torch.sparse_coo_tensor(L.indices().flip(0), L.values(), L.shape).coalesce()
+        
+        # Package L and U into a tuple. This becomes the primary output.
+        LU_factors = (L, U)
+
+        # Return the tuple in both training and evaluation modes for a consistent output signature.
         if self.training:
-            return L, l1_penalty, None
+            return LU_factors, l1_penalty, None
         else:
-            U = torch.sparse_coo_tensor(L.indices().flip(0), L.values(), L.shape).coalesce()
-            return L, U, None
+            # We also return the L1 penalty as None to match the training signature.
+            return LU_factors, None, None

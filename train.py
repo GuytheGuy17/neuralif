@@ -1,6 +1,3 @@
-# FILE: train.py
-# (Updated to run the entire training pipeline in memory-efficient float32)
-
 import os
 import argparse
 import json
@@ -13,6 +10,9 @@ from neuralif.utils import count_parameters
 from neuralif.loss import loss
 from neuralif.models import NeuralIF
 
+# This is the main function that runs the training process.
+# It initializes the model, optimizer, and data loader, and runs the training loop.
+# It saves the model and configuration if specified.
 def main(config):
     device = torch.device(f"cuda:{config['device']}" if torch.cuda.is_available() and config.get("device") is not None else "cpu")
     print(f"Using device: {device}")
@@ -36,9 +36,9 @@ def main(config):
     model.to(device)
 
     print(f"\nNumber of parameters in model: {count_parameters(model)}\n")
-    
+    # Initialize the optimizer
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["learning_rate"])
-    
+    # Load the model if a checkpoint is provided
     train_loader = get_dataloader(
         dataset_path=config["dataset"], 
         batch_size=config["batch_size"], 
@@ -46,7 +46,7 @@ def main(config):
         add_fill_in=config["add_fill_in"],
         fill_in_k=config["fill_in_k"]
     )
-    
+    # Load the model if a checkpoint is provided
     print("--- Starting Training ---")
     for epoch in range(config["num_epochs"]):
         model.train()
@@ -55,10 +55,10 @@ def main(config):
         for data in train_loader:
             # Data is loaded as float32 and moved to the device
             data = data.to(device)
-            
+            # Ensure the model is in training mode
             optimizer.zero_grad()
-            
-            L_factor, reg, _ = model(data)
+            #    We capture it in a new variable `LU_factors`.
+            LU_factors, reg, _ = model(data)
             
             loss_kwargs = {
                 "pcg_steps": config["pcg_steps"],
@@ -67,7 +67,10 @@ def main(config):
                 "preconditioner_solve_steps": config["preconditioner_solve_steps"] 
             }
             
-            main_loss = loss(L_factor, data, config=config["loss"], **loss_kwargs)
+            #    The loss function is designed to handle the tuple output from the model.
+            #    It computes the loss based on the LU factors and the data.
+            #    The loss function is already designed to handle this.
+            main_loss = loss(LU_factors, data, config=config["loss"], **loss_kwargs)
             
             total_loss = main_loss
             if reg is not None and config["regularizer"] > 0:
