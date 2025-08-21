@@ -94,7 +94,8 @@ class LearnedPreconditioner(Preconditioner):
     def _compute_preconditioner(self, data_on_device): 
         self.model.eval()
         with torch.no_grad():
-            L_torch, U_torch, _ = self.model(data_on_device)
+            LU_factors, _, _ = self.model(data_on_device)
+            L_torch, U_torch = LU_factors
         # Ensure L_torch is a sparse COO tensor
         L_final = L_torch.coalesce()
         mask = L_final.values().abs() > self.drop_tol
@@ -105,7 +106,7 @@ class LearnedPreconditioner(Preconditioner):
             L_final.shape
         ).coalesce()
 
-        # --- Process U ---
+        
         # 2. Apply the same filtering to the U matrix from the model.
         U_final = U_torch.coalesce()
         mask_U = U_final.values().abs() > self.drop_tol
