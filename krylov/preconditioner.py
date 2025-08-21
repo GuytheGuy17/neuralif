@@ -20,6 +20,8 @@ class Preconditioner:
         return 0
     def solve(self, b: torch.Tensor) -> torch.Tensor:
         return b
+    
+
 # This is a Jacobi preconditioner that uses the inverse of the diagonal of the matrix A.
 class Jacobi(Preconditioner):
     def __init__(self, A_torch: torch.Tensor):
@@ -83,6 +85,8 @@ class ScipyILU(Preconditioner):
         return torch.from_numpy(x_np).to(b.device, b.dtype)
     
 
+# This is an Incomplete Cholesky (IC) preconditioner using the 'pyamg' library.
+# It is an easy-to-install and robust baseline for SPD matrices.
 class PyamgIC(Preconditioner):
     """
     An Incomplete Cholesky (IC) preconditioner using the 'pyamg' library.
@@ -151,7 +155,7 @@ class LearnedPreconditioner(Preconditioner):
         ).coalesce()
 
         
-        # 2. Apply the same filtering to the U matrix from the model.
+        # Apply the same filtering to the U matrix from the model.
         U_final = U_torch.coalesce()
         mask_U = U_final.values().abs() > self.drop_tol
         U_final = torch.sparse_coo_tensor(
