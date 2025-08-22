@@ -1,6 +1,10 @@
 # neuralif
 
-This repository contains the code for learning incomplete factorization preconditioners, modified for my masters thesis by Guy McClennan but built off the back of the repository of [Paul Häusner](https://paulhausner.github.io), Aleix Nieto Juscafresa, [Ozan Öktem](https://www.kth.se/profile/ozan), and [Jens Sjölund](https://jsjol.github.io/) for their paper on Neural Incomplete Factorization.
+This repository contains the code for learning incomplete factorization preconditioners, modified for my masters thesis by Guy McClennan.
+
+The initial codebase was based on the repository of [Paul Häusner](https://paulhausner.github.io), Aleix Nieto Juscafresa, [Ozan Öktem](https://www.kth.se/profile/ozan), and [Jens Sjölund](https://jsjol.github.io/) for their paper on Neural Incomplete Factorization.
+
+Much of the initial code had to be rewritten due to problems with package dependencies.
 
 ## Installation
 
